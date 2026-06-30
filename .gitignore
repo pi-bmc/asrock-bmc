@@ -11,3 +11,4 @@ customrc
 *.log
 .claude/scheduled_tasks.lock
 compile_commands.json
+openbmc
