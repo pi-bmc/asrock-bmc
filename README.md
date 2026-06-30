@@ -66,3 +66,4 @@ bitbake obmc-phosphor-image
 Bump the `commit:` under the `openbmc` repo in [kas.yml](kas.yml) to a newer
 `openbmc/openbmc` revision, then rebuild and re-test. Nothing else moves —
 the upstream layers travel together with that single pin.
+# asrock-bmc
