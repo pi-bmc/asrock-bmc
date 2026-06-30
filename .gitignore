@@ -1,16 +1,13 @@
-# kas / bitbake work areas and clones
-/build/
-/sstate-cache/
-/downloads/
-/.kas-work/
-
-# kas clones upstream repos next to this file by default
-/openbmc/
-/meta/
-/meta-openembedded/
-/bitbake/
-
-# misc
+build*/*
+customrc
+*.sw?
+.repo/
+.vscode/
+*.img
+*.iso
+*.ima
+*.EXE
+*.zip
 *.log
-*.lock
-*.swp
+.claude/scheduled_tasks.lock
+compile_commands.json
