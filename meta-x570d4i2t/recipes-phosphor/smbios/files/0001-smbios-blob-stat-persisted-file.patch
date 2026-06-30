@@ -1,0 +1,156 @@
+From: ASRock X570D4I-2T port <nbatkins@gmail.com>
+Date: Sun, 22 Jun 2026 00:00:00 +0000
+Subject: [PATCH] smbios-ipmi-blobs: fix BIOS-version parse + stat persisted CRC
+
+Two related fixes to the /smbios blob handler so the host can push its
+SMBIOS table once and have it both parse correctly and be skippable on
+later boots.
+
+1. BIOS version = null: the host SmbiosBmcPushDxe prepends a synthesized
+   "_SM3_" entry point to the structure table. smbios-mdr's getSMBIOSTypePtr
+   walks structures from byte 0, so the leading entry point hides Type 0 and
+   System::version() returns "No BIOS Version" (later types like DIMMs still
+   resync, masking the bug). But checkSMBIOSVersion() also needs an anchor
+   present, so simply stripping it makes the whole table "Unsupported". Fix:
+   in commit(), if the committed buffer starts with an "_SM_"/"_SM3_" entry
+   point, rotate it to the END before persisting -- the table then begins at
+   byte 0 (Type 0 found) while the anchor remains for the version check.
+   Validated live: BMC then reports the real BIOS version.
+
+2. stat persisted table: upstream stat(path) returns false once the blob
+   session closes (blobPtr null), so a host BmcBlobStat on "/smbios" learns
+   nothing about the table already at /var/lib/smbios/smbios2. Make it read
+   the persisted file and report it committed with a CRC of the table payload
+   (matching the host GenCrc) in the stat metadata, so the push DXE can skip
+   re-pushing byte-identical data and re-push on any hardware change.
+
+Upstream-Status: Inappropriate [ASRock X570D4I-2T board-specific; depends on the
+in-house SmbiosBmcPushDxe host push format]
+Signed-off-by: ASRock X570D4I-2T port <nbatkins@gmail.com>
+---
+diff --git a/src/smbios-ipmi-blobs/handler.cpp b/src/smbios-ipmi-blobs/handler.cpp
+index ff68353..abc0aa8 100644
+--- a/src/smbios-ipmi-blobs/handler.cpp
++++ b/src/smbios-ipmi-blobs/handler.cpp
+@@ -60,6 +60,33 @@ bool syncSmbiosData()
+     return true;
+ }
+ 
++/* CRC matching the host SmbiosBmcPushDxe GenCrc (CCITT poly 0x1021, init
++ * 0xFFFF, with two extra trailing rounds).  Computed over the persisted table
++ * payload and returned to the BIOS in the blob stat metadata so it can compare
++ * against its freshly-built table and skip re-pushing only byte-identical data.
++ */
++static uint16_t pushDxeCrc(const uint8_t* data, size_t size)
++{
++    uint16_t crc = 0xFFFF;
++    for (size_t i = 0; i < size + 2; i++)
++    {
++        for (int j = 0; j < 8; j++)
++        {
++            uint16_t xf = (crc & 0x8000) ? 1 : 0;
++            crc = static_cast<uint16_t>(crc << 1);
++            if (i < size && (data[i] & (1 << (7 - j))))
++            {
++                crc++;
++            }
++            if (xf)
++            {
++                crc ^= 0x1021;
++            }
++        }
++    }
++    return crc;
++}
++
+ } // namespace internal
+ 
+ bool SmbiosBlobHandler::canHandleBlob(const std::string& path)
+@@ -79,13 +106,47 @@ bool SmbiosBlobHandler::deleteBlob(const std::string& /* path */)
+ 
+ bool SmbiosBlobHandler::stat(const std::string& path, struct BlobMeta* meta)
+ {
+-    if (!blobPtr || blobPtr->blobId != path)
++    /* In-flight session: report the live staging buffer state. */
++    if (blobPtr && blobPtr->blobId == path)
++    {
++        meta->size = blobPtr->buffer.size();
++        meta->blobState = blobPtr->state;
++        return true;
++    }
++
++    if (path != blobId)
+     {
+         return false;
+     }
+ 
+-    meta->size = blobPtr->buffer.size();
+-    meta->blobState = blobPtr->state;
++    /* No active session: report the SMBIOS table already persisted on the BMC
++     * by a prior commit, with a CRC of the table payload in the metadata, so
++     * the host BIOS can compare its freshly-built table and re-push when the
++     * data differs (e.g. a DIMM/CPU/FRU change) but skip when it is identical.
++     */
++    std::ifstream smbiosFile(mdrDefaultFile, std::ios_base::binary);
++    if (!smbiosFile.good())
++    {
++        return false;
++    }
++    MDRSMBIOSHeader mdrHdr{};
++    smbiosFile.read(reinterpret_cast<char*>(&mdrHdr), sizeof(mdrHdr));
++    if (!smbiosFile.good() || mdrHdr.dataSize == 0)
++    {
++        return false;
++    }
++    std::vector<uint8_t> table(mdrHdr.dataSize);
++    smbiosFile.read(reinterpret_cast<char*>(table.data()), mdrHdr.dataSize);
++    if (static_cast<uint32_t>(smbiosFile.gcount()) != mdrHdr.dataSize)
++    {
++        return false;
++    }
++
++    uint16_t crc = internal::pushDxeCrc(table.data(), table.size());
++    meta->size = mdrHdr.dataSize;
++    meta->blobState = blobs::StateFlags::committed;
++    meta->metadata = {static_cast<uint8_t>(crc & 0xFF),
++                      static_cast<uint8_t>((crc >> 8) & 0xFF)};
+     return true;
+ }
+ 
+@@ -186,6 +247,34 @@ bool SmbiosBlobHandler::commit(uint16_t session,
+     /* Clear the commit_error bit. */
+     blobPtr->state &= ~blobs::StateFlags::commit_error;
+ 
++    /* smbios-mdr parses structures from byte 0 (getSMBIOSTypePtr) yet also
++     * requires an "_SM_"/"_SM3_" anchor somewhere in the buffer
++     * (checkSMBIOSVersion).  A host that PREPENDS its SMBIOS entry point (the
++     * stock-ROM SmbiosBmcPushDxe does) hides Type 0 -> the BIOS version reads
++     * back null.  If the buffer starts with an entry point, rotate it to the
++     * END: the structure table then begins at byte 0 (Type 0 found) while the
++     * anchor stays present for the version check.  A buffer that already has
++     * the table first (fixed ROM) is left untouched.
++     */
++    {
++        auto& buf = blobPtr->buffer;
++        size_t epRot = 0;
++        if (buf.size() >= 24 && buf[0] == '_' && buf[1] == 'S' &&
++            buf[2] == 'M' && buf[3] == '3' && buf[4] == '_')
++        {
++            epRot = buf[6]; /* _SM3_ EntryPointLength (24) */
++        }
++        else if (buf.size() >= 31 && buf[0] == '_' && buf[1] == 'S' &&
++                 buf[2] == 'M' && buf[3] == '_')
++        {
++            epRot = buf[5]; /* _SM_ EntryPointLength (31) */
++        }
++        if (epRot > 0 && epRot < buf.size())
++        {
++            std::rotate(buf.begin(), buf.begin() + epRot, buf.end());
++        }
++    }
++
+     std::string defaultDir =
+         std::filesystem::path(mdrDefaultFile).parent_path();
+ 
+-- 
+2.40.0

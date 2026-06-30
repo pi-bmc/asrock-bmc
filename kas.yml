@@ -1,0 +1,74 @@
+# kas configuration for the ASRock Rack X570D4I-2T OpenBMC build.
+#
+# This repository contains ONLY the files we own: the `meta-x570d4i2t`
+# machine layer. Everything else is pulled, unmodified, from upstream
+# OpenBMC by kas.
+#
+# Build:
+#     kas build kas.yml
+# or, fully containerized (no host deps):
+#     kas-container build kas.yml
+#
+# The resulting image is bit-for-bit equivalent to building MACHINE=x570d4i2t
+# inside a full openbmc/openbmc tree at the pinned commit below.
+
+header:
+  version: 14
+
+distro: openbmc-phosphor
+machine: x570d4i2t
+
+repos:
+  # ---------------------------------------------------------------------------
+  # Upstream OpenBMC.
+  #
+  # In the modern openbmc/openbmc layout, openembedded-core (`meta`), bitbake,
+  # and meta-openembedded live INSIDE this repo as the in-tree `upstream-layers`
+  # subtree (exposed via the top-level `meta`, `meta-openembedded` and `bitbake`
+  # symlinks). So a single clone provides every upstream layer we need plus
+  # bitbake itself.
+  #
+  # Pinned to the exact commit this board was developed against so the build is
+  # reproducible. To move the board forward, bump this commit (and re-test).
+  # ---------------------------------------------------------------------------
+  openbmc:
+    url: https://github.com/openbmc/openbmc.git
+    commit: 1a2564f920cf4b8ba9c7c5edc5d448314d841682
+    layers:
+      meta:
+      meta-openembedded/meta-oe:
+      meta-openembedded/meta-networking:
+      meta-openembedded/meta-python:
+      meta-phosphor:
+      meta-aspeed:
+      # Base ASRock layer: provides conf/machine/include/asrock.inc and globs
+      # the shared meta-common recipes (u-boot, flash, settings bbappends) that
+      # meta-x570d4i2t builds on top of. Unmodified upstream.
+      meta-asrock:
+
+  # ---------------------------------------------------------------------------
+  # This repository (the one containing this kas.yml). The only layer we own.
+  # ---------------------------------------------------------------------------
+  asrock-x570d4i2t:
+    layers:
+      meta-x570d4i2t:
+
+# Mirrors meta-x570d4i2t/conf/templates/default/local.conf.sample (minus
+# MACHINE/DISTRO, which kas emits from the keys above).
+local_conf_header:
+  x570d4i2t: |
+    PACKAGE_CLASSES ?= "package_ipk"
+    SANITY_TESTED_DISTROS:append ?= " *"
+    EXTRA_IMAGE_FEATURES = "allow-root-login"
+    USER_CLASSES ?= "buildstats"
+    PATCHRESOLVE = "noop"
+    CONF_VERSION = "2"
+    BB_DISKMON_DIRS = "\
+        STOPTASKS,${TMPDIR},1G,100K \
+        STOPTASKS,${DL_DIR},1G,100K \
+        STOPTASKS,${SSTATE_DIR},1G,100K \
+        STOPTASKS,/tmp,100M,100K \
+        HALT,${TMPDIR},100M,1K \
+        HALT,${DL_DIR},100M,1K \
+        HALT,${SSTATE_DIR},100M,1K \
+        HALT,/tmp,10M,1K"

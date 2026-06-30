@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ASRock OpenBMC port <noreply@example.com>
+Date: Thu, 28 May 2026 06:00:00 +0000
+Subject: [PATCH] ARM: dts: aspeed: Add ASRock X570D4I-2T BMC
+
+Upstream-Status: Pending
+
+Add Linux device tree for the ASRock Rack X570D4I-2T motherboard, a
+Mini-ITX AMD AM4 server board with an ASPEED AST2500 BMC, dual Intel
+X550-AT2 10GbE host NICs and a dedicated Realtek RTL8211E 1GbE BMC
+management PHY.
+
+The device tree is based on the existing Asrock Rack X570D4U (a
+Micro-ATX sibling using the same chipset, BMC SoC and the same Nuvoton
+W83773G hardware monitor). Notable differences:
+
+ - Three fan headers (FAN1..FAN3, all 4-pin) instead of six. Verified
+   against the stock BMC's /api/asrr/settings/getsupportfan endpoint.
+ - AMD SB-RMI (APML) is present at i2c2 0x3C but UNUSABLE and not
+   instantiated (it NAKs the BMC's CTRL/STATUS + MP1 power mailbox; the
+   stock firmware disables APML via SUPPORT_APML_IFC=0; AM4/X570 silicon
+   does not expose the EPYC SB-RMI power mailbox). SB-TSI is likewise not
+   enabled (it would collide with the W83773G already at i2c1:0x4c).
+
+The LED block uses legacy node-name labelling (heartbeat, system-fault)
+to match the rest of the ASRock OpenBMC family and allow the shared
+phosphor-led-manager led-group-config.json to target them by name.
+
+Signed-off-by: ASRock OpenBMC port <noreply@example.com>
+---
+ arch/arm/boot/dts/aspeed/Makefile                  |   1 +
+ .../boot/dts/aspeed/aspeed-bmc-asrock-x570d4i2t.dts | 445 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 446 insertions(+)
+ create mode 100644 arch/arm/boot/dts/aspeed/aspeed-bmc-asrock-x570d4i2t.dts
+
+diff --git a/arch/arm/boot/dts/aspeed/Makefile b/arch/arm/boot/dts/aspeed/Makefile
+--- a/arch/arm/boot/dts/aspeed/Makefile
++++ b/arch/arm/boot/dts/aspeed/Makefile
+@@ -16,6 +16,7 @@
+ 	aspeed-bmc-asrock-romed8hm3.dtb \
+ 	aspeed-bmc-asrock-spc621d8hm3.dtb \
+ 	aspeed-bmc-asrock-x570d4u.dtb \
++	aspeed-bmc-asrock-x570d4i2t.dtb \
+ 	aspeed-bmc-asus-kommando-ipmi-card.dtb \
+ 	aspeed-bmc-asus-x11-spi-ipmi-card.dtb \
+ 	aspeed-bmc-bytedance-g220a.dtb \
+--
+2.40.0

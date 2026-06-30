@@ -1,0 +1,46 @@
+## @file
+#  SmbiosBmcPushDxe — push the host SMBIOS table to the BMC at ReadyToBoot via
+#  the standard OpenBMC phosphor-ipmi-blobs protocol (blob ID "/smbios") over
+#  the host KCS interface (LPC I/O 0xCA2/0xCA3).  Built as a normal edk2
+#  DXE_DRIVER so the AMI Aptio DXE dispatcher loads it like any other driver.
+#
+#  Copyright (c) 2024, ASRockRack X570D4I-2T OpenBMC port.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = SmbiosBmcPushDxe
+  FILE_GUID                      = 4a2b7c8d-1234-5678-abcd-ef0123456789
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = SmbiosBmcPushEntry
+
+[Sources]
+  SmbiosBmcPushDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+  UefiLib
+  BaseLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  IoLib
+  DebugLib
+
+[Protocols]
+  gEfiSmbiosProtocolGuid              ## CONSUMES
+
+[Guids]
+  gEfiEventReadyToBootGuid            ## CONSUMES  ## Event
+  gEfiEndOfDxeEventGroupGuid          ## CONSUMES  ## Event
+  gEfiSmbiosTableGuid                 ## SOMETIMES_CONSUMES  ## SystemTable
+  gEfiSmbios3TableGuid                ## SOMETIMES_CONSUMES  ## SystemTable
+
+[Depex]
+  TRUE

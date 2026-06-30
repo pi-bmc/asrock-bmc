@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ASRock X570D4I-2T OpenBMC port <nbatkins@gmail.com>
+Date: Fri, 13 Jun 2026 00:00:00 +0000
+Subject: [PATCH] ast2500: actively enable Super-I/O + iLPC2AHB for SUPERIO
+
+isolate_bmc() disables the AST2500 LPC Super-I/O decode (SCU70 bit20)
+and the iLPC2AHB bridge (LPC HICRB bit6). On the ASRock Rack X570D4I-2T
+the host BIOS Redfish Host Interface driver uses the Super-I/O at host
+I/O 0x4E/0x4F, logical device 0x0D = the iLPC2AHB bridge, to read
+AST2500 GPIO E4 (AHB 0x1E780020 bit4) as a "BMC ready" gate before
+bringing up the host Redfish-over-USB network interface. With the bridge
+disabled that read fails and the host never connects.
+
+CONFIG_ASPEED_ENABLE_SUPERIO only stops isolate_bmc() from re-asserting
+the SCU70 disable strap, but the strap/reset DEFAULT on this board leaves
+both the Super-I/O decode and the iLPC2AHB disabled, so "not disabling"
+is not enough -- the disable bits must be actively CLEARED. Do that when
+CONFIG_ASPEED_ENABLE_SUPERIO is set: clear SCU70 bit20 via the SCU7C
+strap-clear register (HW_STRAP1 + 0xc; the strap register is write-1-set
+so a plain RMW cannot clear it) and clear HICRB bit6 with a normal RMW.
+The HICRB write was previously unconditional; it is now part of the
+disable path taken only when SUPERIO is not enabled. Other isolations
+(P2A/PCIe, debug UART, X-DMA/GFX, FWH) are untouched.
+
+Upstream-Status: Inappropriate [board-specific configuration]
+diff --git a/arch/arm/mach-aspeed/ast2500/board_common.c b/arch/arm/mach-aspeed/ast2500/board_common.c
+index c63fe46..1eed0eb 100644
+--- a/arch/arm/mach-aspeed/ast2500/board_common.c
++++ b/arch/arm/mach-aspeed/ast2500/board_common.c
+@@ -36,15 +36,29 @@ static void isolate_bmc(void)
+ 	u32 val;
+ 
+ 	/* iLPC2AHB */
+-#if !defined(CONFIG_ASPEED_ENABLE_SUPERIO)
++#if defined(CONFIG_ASPEED_ENABLE_SUPERIO)
++	/*
++	 * Actively ENABLE the Super-I/O decode + iLPC2AHB bridge for the host
++	 * Redfish Host Interface (RedfishHi reads BMC GPIOE4 via the iLPC2AHB as a
++	 * "BMC ready" gate). The strap/reset defaults leave both DISABLED, so the
++	 * disable bits must be CLEARED -- merely not re-setting them is not enough.
++	 * SCU70 bit20 is a hardware strap (write-1-set); clear it through the SCU7C
++	 * strap-clear register at HW_STRAP1 + 0xc. HICRB bit6 is a normal RMW.
++	 */
++	writel(SCU_HWSTRAP_LPC_SIO_DEC_DIS, ASPEED_HW_STRAP1 + 0xc);
++
++	val = readl(ASPEED_LPC_CTRL + AST_LPC_HICRB);
++	val &= ~LPC_HICRB_SIO_ILPC2AHB_DIS;
++	writel(val, ASPEED_LPC_CTRL + AST_LPC_HICRB);
++#else
+ 	val = readl(ASPEED_HW_STRAP1);
+ 	val |= SCU_HWSTRAP_LPC_SIO_DEC_DIS;
+ 	writel(val, ASPEED_HW_STRAP1);
+-#endif
+ 
+ 	val = readl(ASPEED_LPC_CTRL + AST_LPC_HICRB);
+ 	val |= LPC_HICRB_SIO_ILPC2AHB_DIS;
+ 	writel(val, ASPEED_LPC_CTRL + AST_LPC_HICRB);
++#endif
+ 
+ 	/* P2A, PCIe BMC */
+ 	val = readl(ASPEED_PCIE_CONFIG_SET);
+-- 
+2.40.0

@@ -1,0 +1,36 @@
+{
+    "filters": [
+        {
+            "Description": "Allow W83773G temperature sensor (bus 1, 0x4C)",
+            "busId": "0x01",
+            "slaveAddr": "0x4C",
+            "slaveAddrMask": "0x00",
+            "command": "0x00",
+            "commandMask": "0xFF"
+        },
+        {
+            "Description": "Allow PSU SMBus (bus 2, 0x38) — non-standard PMBus, kept for manual probing",
+            "busId": "0x02",
+            "slaveAddr": "0x38",
+            "slaveAddrMask": "0x00",
+            "command": "0x00",
+            "commandMask": "0xFF"
+        },
+        {
+            "Description": "Allow PCA9545 I2C mux (bus 4, 0x70)",
+            "busId": "0x04",
+            "slaveAddr": "0x70",
+            "slaveAddrMask": "0x00",
+            "command": "0x00",
+            "commandMask": "0xFF"
+        },
+        {
+            "Description": "Allow SPD/FRU EEPROM (bus 7, 0x50-0x57)",
+            "busId": "0x07",
+            "slaveAddr": "0x50",
+            "slaveAddrMask": "0x07",
+            "command": "0x00",
+            "commandMask": "0xFF"
+        }
+    ]
+}

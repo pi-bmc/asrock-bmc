@@ -1,0 +1,264 @@
+{
+    "Exposes": [
+        {
+            "Index": 0,
+            "Name": "3VSB",
+            "ScaleFactor": 0.3979,
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 3.70},
+                {"Direction": "less than",    "Name": "lower critical",     "Severity": 1, "Value": 3.04}
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 1,
+            "Name": "5VSB",
+            "ScaleFactor": 0.2683,
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 5.49},
+                {"Direction": "less than",    "Name": "lower critical",     "Severity": 1, "Value": 4.50}
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 2,
+            "Name": "VCPU",
+            "PowerState": "On",
+            "ScaleFactor": 0.75,
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 1.65}
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 3,
+            "Name": "VSOC",
+            "PowerState": "On",
+            "ScaleFactor": 0.75,
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 1.54},
+                {"Direction": "less than",    "Name": "lower critical",     "Severity": 1, "Value": 0.36}
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 4,
+            "Name": "VCCM",
+            "PowerState": "On",
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 1.32},
+                {"Direction": "less than",    "Name": "lower critical",     "Severity": 1, "Value": 1.08}
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 5,
+            "Name": "APU_VDDP",
+            "PowerState": "On",
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 1.16},
+                {"Direction": "less than",    "Name": "lower critical",     "Severity": 1, "Value": 0.81}
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 6,
+            "Name": "PM_VDD_CLDO",
+            "PowerState": "On",
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 1.32},
+                {"Direction": "less than",    "Name": "lower critical",     "Severity": 1, "Value": 1.08}
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 7,
+            "Name": "PM_VDDCR_S5",
+            "PowerState": "On",
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 1.16},
+                {"Direction": "less than",    "Name": "lower critical",     "Severity": 1, "Value": 0.89}
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 8,
+            "Name": "PM_VDDCR",
+            "PowerState": "On",
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 1.16},
+                {"Direction": "less than",    "Name": "lower critical",     "Severity": 1, "Value": 0.89}
+            ],
+            "Type": "ADC"
+        },
+        {
+            "BridgeGpio": [{"Name": "output-hwm-vbat-enable", "Polarity": "High", "SetupTime": 0.5}],
+            "Index": 9,
+            "Name": "BAT",
+            "PollRate": 86400,
+            "ScaleFactor": 0.3333,
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 3.40},
+                {"Direction": "less than",    "Name": "lower critical",     "Severity": 1, "Value": 2.70}
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 10,
+            "Name": "3V",
+            "ScaleFactor": 0.3979,
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 3.62},
+                {"Direction": "less than",    "Name": "lower critical",     "Severity": 1, "Value": 2.98}
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 11,
+            "Name": "5V",
+            "ScaleFactor": 0.334,
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 5.49},
+                {"Direction": "less than",    "Name": "lower critical",     "Severity": 1, "Value": 4.50}
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 12,
+            "Name": "12V",
+            "ScaleFactor": 0.0836,
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 13.20},
+                {"Direction": "less than",    "Name": "lower critical",     "Severity": 1, "Value": 10.80}
+            ],
+            "Type": "ADC"
+        },
+
+        {
+            "Address": "0x4C",
+            "Bus": 1,
+            "Name": "CPU Temp",
+            "Name1": "X570 Temp",
+            "Thresholds": [
+                {"Index": 1, "Direction": "greater than", "Name": "upper non critical", "Severity": 0, "Value": 65},
+                {"Index": 1, "Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 85},
+                {"Index": 2, "Direction": "greater than", "Name": "upper non critical", "Severity": 0, "Value": 85},
+                {"Index": 2, "Direction": "greater than", "Name": "upper critical",     "Severity": 1, "Value": 95}
+            ],
+            "Type": "W83773G"
+        },
+
+        {
+            "EntityId": 7,
+            "EntityInstance": 1,
+            "MaxValue": 127,
+            "MinValue": -127,
+            "Name": "SYSTIN",
+            "PowerState": "On",
+            "Timeout": 30,
+            "Type": "ExternalSensor",
+            "Units": "DegreesC"
+        },
+        {
+            "EntityId": 7,
+            "EntityInstance": 2,
+            "MaxValue": 127,
+            "MinValue": -127,
+            "Name": "CPUTIN",
+            "PowerState": "On",
+            "Timeout": 30,
+            "Type": "ExternalSensor",
+            "Units": "DegreesC"
+        },
+        {
+            "EntityId": 7,
+            "EntityInstance": 3,
+            "MaxValue": 127,
+            "MinValue": -127,
+            "Name": "AUXTIN",
+            "PowerState": "On",
+            "Timeout": 30,
+            "Type": "ExternalSensor",
+            "Units": "DegreesC"
+        },
+        {
+            "EntityId": 7,
+            "EntityInstance": 4,
+            "MaxValue": 127,
+            "MinValue": -127,
+            "Name": "PCH CPU Temp",
+            "PowerState": "On",
+            "Timeout": 30,
+            "Type": "ExternalSensor",
+            "Units": "DegreesC"
+        },
+        {
+            "EntityId": 7,
+            "EntityInstance": 5,
+            "MaxValue": 127,
+            "MinValue": -127,
+            "Name": "PCH MCH Temp",
+            "PowerState": "On",
+            "Timeout": 30,
+            "Type": "ExternalSensor",
+            "Units": "DegreesC"
+        },
+        {
+            "EntityId": 7,
+            "EntityInstance": 6,
+            "MaxValue": 100,
+            "MinValue": 0,
+            "Name": "Fan1 Duty",
+            "PowerState": "On",
+            "Timeout": 30,
+            "Type": "ExternalSensor",
+            "Units": "Percent"
+        },
+        {
+            "EntityId": 7,
+            "EntityInstance": 7,
+            "MaxValue": 100,
+            "MinValue": 0,
+            "Name": "Fan2 Duty",
+            "PowerState": "On",
+            "Timeout": 30,
+            "Type": "ExternalSensor",
+            "Units": "Percent"
+        },
+
+        {
+            "Address": "0x4F",
+            "Bus": 4,
+            "Name": "Aux Temp",
+            "Thresholds": [
+                {"Direction": "greater than", "Name": "upper critical", "Severity": 1, "Value": 85},
+                {"Direction": "greater than", "Name": "upper non critical", "Severity": 0, "Value": 75}
+            ],
+            "_comment": "Physical part is a Nuvoton NCT75 (LM75-register-compatible; kernel binds it via lm75/national,lm75). dbus-sensors and EntityManager have no NCT75 type (EM drops the unknown type), so use the supported LM75-family type TMP75 - HwmonTempSensor matches by I2C bus/address, not by hwmon name.",
+            "Type": "TMP75"
+        },
+
+        {
+            "Address": "0x70",
+            "Bus": 0,
+            "ChannelNames": [
+                "PCIE7 SMBus",
+                "M.2 Slot 1 (NVMe MI)",
+                "M.2 Slot 2",
+                "Reserved"
+            ],
+            "Name": "PCIE/M2 Slot Mux",
+            "Type": "PCA9545Mux"
+        }
+    ],
+    "Name": "ASRockRack X570D4I-2T Baseboard",
+    "Probe": "xyz.openbmc_project.FruDevice({'PRODUCT_PRODUCT_NAME': 'X570D4I-2T'})",
+    "Type": "Board",
+    "xyz.openbmc_project.Inventory.Decorator.Asset": {
+        "Manufacturer": "ASRockRack",
+        "Model": "X570D4I-2T",
+        "PartNumber": "$PRODUCT_PART_NUMBER",
+        "SerialNumber": "$PRODUCT_SERIAL_NUMBER"
+    },
+    "xyz.openbmc_project.Inventory.Item.System": {}
+}

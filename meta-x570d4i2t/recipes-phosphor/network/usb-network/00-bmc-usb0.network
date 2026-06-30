@@ -1,0 +1,26 @@
+[Match]
+Name=usb0
+
+[Link]
+MACAddress=02:00:16:92:54:17
+RequiredForOnline=no
+
+[Network]
+# Static link-local host-interface address. DHCP and automatic IPv4LL/zeroconf
+# are BOTH disabled: automatic link-local assignment races our static address
+# and lands a second 169.254.x/16 that phosphor-network tags AddressOrigin.LinkLocal.
+# The IPMI transport handler (transporthandler.cpp getIfAddr4) only returns an
+# address whose origin is Static (or DHCP), so the host BIOS's "Get LAN Config
+# channel 8 / parameter 3 (IP address)" query must see a Static-origin address or
+# it reads 0.0.0.0 and never brings up the Redfish Host Interface.
+DHCP=no
+LinkLocalAddressing=no
+ConfigureWithoutCarrier=yes
+IgnoreCarrierLoss=true
+
+[Address]
+# Scope MUST be global. phosphor-network derives AddressOrigin from scope: a
+# scope-link 169.254.x is classified LinkLocal (rejected by Get LAN Config),
+# while scope-global is classified Static (returned to the BIOS).
+Address=169.254.0.17/16
+Scope=global

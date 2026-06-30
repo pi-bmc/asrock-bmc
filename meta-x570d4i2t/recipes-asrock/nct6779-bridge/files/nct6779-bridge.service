@@ -1,0 +1,13 @@
+[Unit]
+Description=NCT6779 hwmon -> ExternalSensor bridge for X570D4I-2T
+After=xyz.openbmc_project.externalsensor.service
+Wants=xyz.openbmc_project.externalsensor.service
+ConditionPathExists=/sys/bus/i2c/drivers/nct6775-i2c
+
+[Service]
+ExecStart=/usr/libexec/nct6779-bridge.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

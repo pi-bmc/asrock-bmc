@@ -1,0 +1,14 @@
+{
+    "CPU1_DIMM_A1": {
+        "MemoryController": 0,
+        "Socket": 0,
+        "Slot": 0,
+        "Channel": 0
+    },
+    "CPU1_DIMM_B1": {
+        "MemoryController": 0,
+        "Socket": 0,
+        "Slot": 0,
+        "Channel": 1
+    }
+}

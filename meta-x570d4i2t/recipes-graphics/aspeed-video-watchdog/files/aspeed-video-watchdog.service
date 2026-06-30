@@ -1,0 +1,17 @@
+[Unit]
+Description=ASPEED video engine watchdog (V4L2 link-failure recovery)
+Documentation=https://github.com/openbmc/obmc-ikvm
+# Start after obmc-ikvm so journalctl -f immediately has the unit's
+# journal cursor.  No BindsTo — we must survive ikvm being stopped and
+# restarted during a recovery cycle.
+After=obmc-ikvm.service
+Wants=obmc-ikvm.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+ExecStart=/usr/libexec/aspeed-video-watchdog.sh
+
+[Install]
+WantedBy=multi-user.target

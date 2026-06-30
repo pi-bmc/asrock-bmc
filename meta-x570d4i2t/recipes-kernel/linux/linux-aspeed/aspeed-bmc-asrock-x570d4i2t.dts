@@ -1,0 +1,476 @@
+// SPDX-License-Identifier: GPL-2.0+
+/dts-v1/;
+#include "aspeed-g5.dtsi"
+#include <dt-bindings/gpio/aspeed-gpio.h>
+
+/ {
+	model = "ASRockRack X570D4I-2T BMC";
+	compatible = "asrock,x570d4i2t-bmc", "aspeed,ast2500";
+
+	aliases {
+		i2c40 = &i2c0mux0ch0;
+		i2c41 = &i2c0mux0ch1;
+		i2c42 = &i2c0mux0ch2;
+		i2c43 = &i2c0mux0ch3;
+	};
+
+	chosen {
+		stdout-path = &uart5;
+	};
+
+	memory@80000000 {
+		reg = <0x80000000 0x20000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		pci_memory: region@9a000000 {
+			no-map;
+			reg = <0x9a000000 0x00010000>; /* 64K */
+		};
+
+		video_engine_memory: jpegbuffer {
+			size = <0x02800000>;	/* 40M */
+			alignment = <0x01000000>;
+			compatible = "shared-dma-pool";
+			reusable;
+		};
+
+		gfx_memory: framebuffer {
+			size = <0x01000000>;
+			alignment = <0x01000000>;
+			compatible = "shared-dma-pool";
+			reusable;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		/*
+		 * Legacy node-name LED labelling — matches the rest of the
+		 * ASRock OpenBMC family (ROMED8HM3, SPC621D8HM3, E3C246D4I,
+		 * E3C256D4I) and lets the shared phosphor-led-manager
+		 * led-group-config.json target these by name.
+		 */
+		heartbeat {
+			gpios = <&gpio ASPEED_GPIO(H, 6) GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "timer";
+		};
+
+		system-fault {
+			gpios = <&gpio ASPEED_GPIO(Z, 2) GPIO_ACTIVE_LOW>;
+			panic-indicator;
+		};
+	};
+
+	iio-hwmon {
+		compatible = "iio-hwmon";
+		io-channels = <&adc 0>, <&adc 1>, <&adc 2>, <&adc 3>, <&adc 4>,
+			<&adc 5>, <&adc 6>, <&adc 7>, <&adc 8>, <&adc 9>,
+			<&adc 10>, <&adc 11>, <&adc 12>;
+	};
+};
+
+&gpio {
+	status = "okay";
+	gpio-line-names =
+	/*  A */ "input-locatorled-n", "", "", "", "", "", "", "",
+	/*  B */ "input-bios-post-cmplt-n", "", "", "", "", "", "", "",
+	/*  C */ "", "", "", "", "", "", "control-locatorbutton-n", "",
+	/*  D */ "button-power-n", "control-power-n", "button-reset-n",
+		 "control-reset-n", "", "", "", "",
+	/*  E */ "", "", "", "", "output-redfish-hi-ready", "", "", "",
+	/*  F */ "", "", "", "", "", "", "", "",
+	/*  G */ "output-hwm-vbat-enable", "input-id0-n", "input-id1-n",
+		 "input-id2-n", "input-aux-smb-alert-n", "",
+		 "input-psu-smb-alert-n", "",
+	/*  H */ "", "", "", "", "input-mfg-mode-n", "",
+		 "led-heartbeat-n", "input-case-open-n",
+	/*  I */ "", "", "", "", "", "", "", "",
+	/*  J */ "output-bmc-ready-n", "control-bios-spi-mux-n", "", "", "", "", "", "",
+	/*  K */ "", "", "", "", "", "", "", "",
+	/*  L */ "", "", "", "", "", "", "", "",
+	/*  M */ "", "", "", "", "", "", "", "",
+	/*  N */ "", "", "", "", "", "", "", "",
+	/*  O */ "", "", "", "", "", "", "", "",
+	/*  P */ "", "", "", "", "", "", "", "",
+	/*  Q */ "", "", "", "", "input-bmc-smb-present-n", "", "",
+		 "input-pcie-wake-n",
+	/*  R */ "", "", "", "", "", "", "", "",
+	/*  S */ "input-bmc-pchhot-n", "", "", "", "", "", "", "",
+	/*  T */ "", "", "", "", "", "", "", "",
+	/*  U */ "", "", "", "", "", "", "", "",
+	/*  V */ "", "", "", "", "", "", "", "",
+	/*  W */ "", "", "", "", "", "", "", "",
+	/*  X */ "", "", "", "", "", "", "", "",
+	/*  Y */ "input-sleep-s3-n", "input-sleep-s5-n", "", "", "", "",
+		 "", "",
+	/*  Z */ "", "", "led-fault-n", "output-bmc-throttle-n", "", "",
+		 "", "",
+	/* AA */ "input-cpu1-thermtrip-latch-n", "",
+		 "input-cpu1-prochot-n", "", "", "", "", "",
+	/* AB */ "", "input-power-good", "", "", "", "", "", "",
+	/* AC */ "", "", "", "", "", "", "", "";
+
+	/*
+	 * Drive GPIOE4 high as a "BMC ready" flag for the host BIOS Redfish Host
+	 * Interface. RedfishHi (DXE) probes the AST2500 Super-I/O at host I/O
+	 * 0x4E/0x4F, selects logical device 0x0D (the iLPC2AHB bridge) and reads
+	 * AHB 0x1E780020 (GPIO E/F/G/H data) bit4 = GPIOE4; if it is not 1 it
+	 * aborts before bringing up Redfish-over-USB on usb0. The Super-I/O decode
+	 * + iLPC2AHB bridge are kept enabled by the u-boot change
+	 * (CONFIG_ASPEED_ENABLE_SUPERIO + the isolate_bmc HICRB patch).
+	 */
+	redfish-hi-ready-hog {
+		gpio-hog;
+		gpios = <ASPEED_GPIO(E, 4) GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "output-redfish-hi-ready";
+	};
+};
+
+&fmc {
+	status = "okay";
+	flash@0 {
+		status = "okay";
+		label = "bmc";
+		m25p,fast-read;
+		spi-max-frequency = <10000000>;
+#include "openbmc-flash-layout-64.dtsi"
+	};
+};
+
+&spi1 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_spi1_default>;
+	flash@0 {
+		status = "okay";
+		label = "bios";
+		m25p,fast-read;
+		spi-max-frequency = <50000000>;
+	};
+};
+
+&uart5 {
+	status = "okay";
+};
+
+&vuart {
+	status = "okay";
+};
+
+&mac0 {
+	/* Dedicated 1GbE management port (Realtek RTL8211E) */
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_rgmii1_default &pinctrl_mdio1_default>;
+
+	nvmem-cells = <&eth0_macaddress>;
+	nvmem-cell-names = "mac-address";
+};
+
+&mac1 {
+	/* NC-SI sideband to Intel X550-AT2 dual 10GbE */
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_rmii2_default &pinctrl_mdio2_default>;
+	use-ncsi;
+
+	nvmem-cells = <&eth1_macaddress>;
+	nvmem-cell-names = "mac-address";
+};
+
+&i2c0 {
+	/*
+	 * PCIe slot and M.2 SMBus. PCA9545 4-channel mux confirmed at 0x70
+	 * by live i2cdetect (NACK on i2c4, ACK on i2c0).
+	 * Channels: PCIe x16 slot | M.2 slot 1 (NVMe MI) | M.2 slot 2 | Reserved
+	 */
+	status = "okay";
+
+	i2c-mux@70 {
+		compatible = "nxp,pca9545";
+		reg = <0x70>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		i2c0mux0ch0: i2c@0 {
+			/* SMBus on PCIe slot (X570D4I-2T: single PCIe x16) */
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0>;
+		};
+
+		i2c0mux0ch1: i2c@1 {
+			/*
+			 * SMBus on M.2 slot 1 — carries the NVMe MI sideband
+			 * used by the stock BMC to report SDR sensor #56
+			 * "NVME HDD" temperature. The actual NVMe-MI protocol
+			 * is implemented in userspace by dbus-sensors's
+			 * NVMeSensor, configured via entity-manager rather
+			 * than a kernel driver.
+			 */
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <1>;
+		};
+
+		i2c0mux0ch2: i2c@2 {
+			/* SMBus on M.2 slot 2 */
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <2>;
+		};
+
+		i2c0mux0ch3: i2c@3 {
+			/* Reserved */
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <3>;
+		};
+	};
+};
+
+&i2c1 {
+	/*
+	 * Hardware-monitor SMBus (HWM_SMB).
+	 *  - 0x4C: Nuvoton W83773G temperature monitor
+	 *  - 0x2D: Nuvoton NCT6779/NCT6796 family Super-I/O hardware monitor,
+	 *    accessed via its "back door" i2c interface. The host BIOS
+	 *    continues to drive the same chip via LPC (front door) and owns
+	 *    fan PWM/tach control through its built-in Smart Fan curve. The
+	 *    BMC binds nct6775-i2c read-only and surfaces SYSTIN, CPUTIN,
+	 *    AUXTIN, the X570 chipset temp (PCH_CHIP_TEMP, == "X570 Temp" on
+	 *    the stock MegaRAC), voltages, and fan RPMs into hwmon.
+	 */
+	status = "okay";
+
+	w83773g@4c {
+		compatible = "nuvoton,w83773g";
+		reg = <0x4c>;
+	};
+
+	nct6779@2d {
+		compatible = "nuvoton,nct6779";
+		reg = <0x2d>;
+	};
+};
+
+&i2c2 {
+	/*
+	 * PSU_SMB1 SMBus (AMI IPMI.conf "PSU_SMB1"). Two devices live here, but
+	 * NEITHER is usable, so no child nodes are instantiated:
+	 *  - 0x38: Supermicro PWS-505P-1H PSU. Spec'd PMBus, but non-standard:
+	 *    the Linux generic `pmbus` driver fails capability ID, raw reads do
+	 *    not decode as LINEAR, and the stock MegaRAC SDR contains NO PSU
+	 *    power/voltage/current sensor (it never read PSU telemetry either).
+	 *  - 0x3C: AMD SB-RMI (APML). Version reg 0x20 reads 0x17, but the
+	 *    SB-RMI CTRL/STATUS regs and the MP1 power mailbox NAK all BMC
+	 *    access (driver probe fails -EIO). The stock firmware ships with
+	 *    SUPPORT_APML_IFC=0 — the OEM disabled APML, and AM4/X570 silicon
+	 *    does not expose the EPYC-class SB-RMI power mailbox to the BMC.
+	 * Net: no power telemetry or power cap source exists on this board.
+	 * The bus is left enabled for manual i2c access / future probing.
+	 */
+	status = "okay";
+};
+
+&i2c3 {
+	status = "okay";
+};
+
+&i2c4 {
+	/*
+	 * Auxiliary SMBus. Confirmed live device: Nuvoton NCT75 LM75-compatible
+	 * temperature sensor at 0x4f (vendor reg 0xfe=0xde, temp reads ~65°C).
+	 * The PCA9545 mux originally assumed here (0x70) is actually on i2c0.
+	 */
+	status = "okay";
+
+	nct75@4f {
+		/*
+		 * The NCT75 is LM75-register-compatible, but the kernel lm75
+		 * driver's match tables (6.18) have no "nuvoton,nct75" entry —
+		 * with only that compatible the driver never binds, no hwmon
+		 * appears, and the entity-manager "Aux Temp" (NCT75 @ bus4 0x4f)
+		 * sensor silently goes missing. Add the generic "national,lm75"
+		 * fallback (in the lm75 of_match table) so the driver binds.
+		 */
+		compatible = "nuvoton,nct75", "national,lm75";
+		reg = <0x4f>;
+	};
+};
+
+&i2c5 {
+	/* SMBus on BMC connector (BMC_SMB_1) */
+	status = "okay";
+};
+
+&i2c6 {
+	/*
+	 * Host-shared SMBus per AMI's IPMI.conf (SMBUS_BUS_NUM=6). Likely
+	 * carries the host-side fan/temperature SuperIO or CPLD that the
+	 * stock BMC's pwmtach.ko configured before commanding fans through
+	 * the AST2500 PWM/Tach controller. Enabled for runtime probing
+	 * (i2cdetect) — children are added once the actual device is
+	 * identified.
+	 */
+	status = "okay";
+};
+
+/*
+ * i2c9: probing shows I2C mux chips at 0x72-0x77 (busy — already claimed).
+ * No declared devices; leave disabled until topology is mapped.
+ * i2c10/i2c11: return "Error reading bus" — no physical connections.
+ * i2c12/i2c13: no known devices, leave disabled.
+ */
+
+&i2c7 {
+	/* FRU and SPD EEPROM SMBus — also holds MAC addresses in NVMEM */
+	status = "okay";
+
+	eeprom@57 {
+		compatible = "st,24c128", "atmel,24c128";
+		reg = <0x57>;
+		pagesize = <16>;
+
+		nvmem-layout {
+			compatible = "fixed-layout";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			eth0_macaddress: macaddress@3f80 {
+				reg = <0x3f80 6>;
+			};
+
+			eth1_macaddress: macaddress@3f88 {
+				reg = <0x3f88 6>;
+			};
+		};
+	};
+
+	/* DDR4 SPD EEPROMs (EE1004) - kernel drives SPA0/SPA1 page-select */
+	dimm0_spd: eeprom@50 {
+		compatible = "jedec,ee1004";
+		reg = <0x50>;
+	};
+	dimm1_spd: eeprom@51 {
+		compatible = "jedec,ee1004";
+		reg = <0x51>;
+	};
+	dimm2_spd: eeprom@52 {
+		compatible = "jedec,ee1004";
+		reg = <0x52>;
+	};
+	dimm3_spd: eeprom@53 {
+		compatible = "jedec,ee1004";
+		reg = <0x53>;
+	};
+};
+
+&i2c8 {
+	/* SMBus on intelligent platform management bus header (IPMB_1) */
+	status = "okay";
+};
+
+&gfx {
+	status = "okay";
+	memory-region = <&gfx_memory>;
+};
+
+&vhub {
+	/* USB 2.0 virtual hub UDC (virtual media); no USB-NCM/RHI gadget */
+	status = "okay";
+};
+
+&ehci1 {
+	status = "okay";
+};
+
+&uhci {
+	status = "okay";
+};
+
+&kcs3 {
+	aspeed,lpc-io-reg = <0xca2>;
+	status = "okay";
+};
+
+&lpc_ctrl {
+	status = "okay";
+};
+
+&lpc_snoop {
+	/*
+	 * AMD AGESA generates 2-byte POST codes: byte-low on port 0x80,
+	 * byte-high on port 0x81. Snoop both for full AGESA code capture.
+	 */
+	status = "okay";
+	snoop-ports = <0x80 0x81>;
+};
+
+&p2a {
+	status = "okay";
+	memory-region = <&pci_memory>;
+};
+
+&video {
+	status = "okay";
+	memory-region = <&video_engine_memory>;
+};
+
+&pwm_tacho {
+	/*
+	 * X570D4I-2T has 3 fan headers (FAN1, FAN2, FAN3), all 4-pin,
+	 * verified via the stock /api/asrr/settings/getsupportfan endpoint
+	 * (only fan1..3 = 1). Channel mapping matches the sibling X570D4U
+	 * (same PCB generation): PWM0→FAN1/TACH0, PWM1→FAN2/TACH1,
+	 * PWM2→FAN3/TACH2. All headers are single-tach 4-pin.
+	 */
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_pwm0_default
+		     &pinctrl_pwm1_default
+		     &pinctrl_pwm2_default>;
+
+	fan@0 {
+		/* FAN1 (4-pin) */
+		reg = <0x00>;
+		aspeed,fan-tach-ch = /bits/ 8 <0x00>;
+	};
+
+	fan@1 {
+		/* FAN2 (4-pin) */
+		reg = <0x01>;
+		aspeed,fan-tach-ch = /bits/ 8 <0x01>;
+	};
+
+	fan@2 {
+		/* FAN3 (4-pin) */
+		reg = <0x02>;
+		aspeed,fan-tach-ch = /bits/ 8 <0x02>;
+	};
+};
+
+&adc {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_adc0_default       /* 3VSB */
+			&pinctrl_adc1_default    /* 5VSB */
+			&pinctrl_adc2_default    /* VCPU */
+			&pinctrl_adc3_default    /* VSOC */
+			&pinctrl_adc4_default    /* VCCM */
+			&pinctrl_adc5_default    /* APU-VDDP */
+			&pinctrl_adc6_default    /* PM-VDD-CLDO */
+			&pinctrl_adc7_default    /* PM-VDDCR-S5 */
+			&pinctrl_adc8_default    /* PM-VDDCR */
+			&pinctrl_adc9_default    /* VBAT */
+			&pinctrl_adc10_default   /* 3V */
+			&pinctrl_adc11_default   /* 5V */
+			&pinctrl_adc12_default>; /* 12V */
+};

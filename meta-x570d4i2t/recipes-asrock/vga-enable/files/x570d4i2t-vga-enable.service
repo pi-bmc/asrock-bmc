@@ -1,0 +1,16 @@
+[Unit]
+Description=Enable AST2500 host VGA PCIe function (VGA_EN) for KVM capture
+Documentation=man:x570d4i2t-vga-enable
+# Run very early, before anything could power on the host, so the host PCIe
+# enumerates the VGA controller (1a03:2000) rather than the BMC device.
+DefaultDependencies=no
+After=sysinit.target
+Before=basic.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/x570d4i2t-vga-enable.sh
+
+[Install]
+WantedBy=basic.target
