@@ -364,6 +364,25 @@ int main()
     auto pin = makeSensor(server, "power", "PSU_Input_Power", "Watts", 0, 600,
                           kNaN, 525, kNaN);
 
+    // Tag PSU AC-input power as the chassis TotalPower. bmcweb sources
+    // Redfish Chassis/<id>/EnvironmentMetrics -> PowerWatts.Reading from the
+    // single chassis-associated power sensor that implements
+    // xyz.openbmc_project.Sensor.Purpose with Purpose == TotalPower (see
+    // bmcweb environment_metrics.hpp getPowerWatts). The web UI's power page
+    // (usePowerControl -> PowerWatts.Reading) reads exactly that, so without
+    // this interface "Power consumption" renders as Not available. On this
+    // single-PSU box the PSU AC input power is the whole-chassis draw. The
+    // required Sensor.Value + all_sensors/chassis association are already set
+    // by makeSensor above; this only adds the Purpose tag.
+    auto pinPurpose = server.add_interface(
+        sensorRoot + "power/PSU_Input_Power",
+        "xyz.openbmc_project.Sensor.Purpose");
+    pinPurpose->register_property(
+        "Purpose",
+        std::vector<std::string>{
+            "xyz.openbmc_project.Sensor.Purpose.SensorPurpose.TotalPower"});
+    pinPurpose->initialize();
+
     // ---- poll loop ----
     auto timer = std::make_shared<boost::asio::steady_timer>(io);
     std::function<void()> poll = [&, timer]() {

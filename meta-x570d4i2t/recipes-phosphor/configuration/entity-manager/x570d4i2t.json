@@ -255,10 +255,11 @@
     "Probe": "xyz.openbmc_project.FruDevice({'PRODUCT_PRODUCT_NAME': 'X570D4I-2T'})",
     "Type": "Board",
     "xyz.openbmc_project.Inventory.Decorator.Asset": {
-        "Manufacturer": "ASRockRack",
-        "Model": "X570D4I-2T",
-        "PartNumber": "$PRODUCT_PART_NUMBER",
-        "SerialNumber": "$PRODUCT_SERIAL_NUMBER"
+        "BuildDate": "$BOARD_MANUFACTURE_DATE",
+        "Manufacturer": "$BOARD_MANUFACTURER",
+        "Model": "$BOARD_PRODUCT_NAME",
+        "PartNumber": "$BOARD_PART_NUMBER",
+        "SerialNumber": "$BOARD_SERIAL_NUMBER"
     },
     "xyz.openbmc_project.Inventory.Item.System": {}
 }
