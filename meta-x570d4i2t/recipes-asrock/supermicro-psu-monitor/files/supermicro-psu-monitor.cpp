@@ -74,7 +74,7 @@ constexpr uint8_t psuAddr = 0x38;
 constexpr int pollSeconds = 5;
 
 const std::string chassisPath =
-    "/xyz/openbmc_project/inventory/system/board/ASRock_Rack_X570D4I";
+    "/xyz/openbmc_project/inventory/system/board/bmc";
 const std::string psuInvPath =
     "/xyz/openbmc_project/inventory/system/powersupply/psu0";
 const std::string sensorRoot = "/xyz/openbmc_project/sensors/";
