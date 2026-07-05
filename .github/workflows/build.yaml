@@ -37,8 +37,9 @@ env:
 
 jobs:
   # ── Stage 1: Cross-toolchain ─────────────────────────────────────────────────
-  # Builds the cross-compiler and sysroot. All stage-2 jobs depend on its sstate
-  # so they skip this expensive step on cache hits.
+  # Primes the cross toolchain + libc via gcc-runtime (pulls binutils-cross →
+  # gcc-cross → glibc → gcc-runtime). All stage-2 jobs depend on its sstate so
+  # they skip this expensive step on cache hits.
   toolchain:
     runs-on: ubuntu-latest
     steps:
@@ -96,7 +97,7 @@ jobs:
             checkpoint_pid=$!
             trap '[ -n "${checkpoint_pid}" ] && kill "${checkpoint_pid}" 2>/dev/null || true' EXIT INT TERM
           fi
-          kas shell kas.yml -c "bitbake virtual/cross-cc"
+          kas shell kas.yml -c "bitbake gcc-runtime"
 
       - name: Save Yocto OCI caches
         if: ${{ always() && env.CACHE_ENABLED == 'true' }}
