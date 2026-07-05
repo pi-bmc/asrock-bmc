@@ -96,7 +96,7 @@ jobs:
             checkpoint_pid=$!
             trap '[ -n "${checkpoint_pid}" ] && kill "${checkpoint_pid}" 2>/dev/null || true' EXIT INT TERM
           fi
-          kas shell kas.yml -- bitbake virtual/cross-cc
+          kas shell kas.yml -c "bitbake virtual/cross-cc"
 
       - name: Save Yocto OCI caches
         if: ${{ always() && env.CACHE_ENABLED == 'true' }}
@@ -162,7 +162,7 @@ jobs:
             checkpoint_pid=$!
             trap '[ -n "${checkpoint_pid}" ] && kill "${checkpoint_pid}" 2>/dev/null || true' EXIT INT TERM
           fi
-          kas shell kas.yml -- bitbake virtual/kernel
+          kas shell kas.yml -c "bitbake virtual/kernel"
 
       - name: Save Yocto OCI caches
         if: ${{ always() && env.CACHE_ENABLED == 'true' }}
@@ -228,7 +228,7 @@ jobs:
             checkpoint_pid=$!
             trap '[ -n "${checkpoint_pid}" ] && kill "${checkpoint_pid}" 2>/dev/null || true' EXIT INT TERM
           fi
-          kas shell kas.yml -- bitbake virtual/bootloader
+          kas shell kas.yml -c "bitbake virtual/bootloader"
 
       - name: Save Yocto OCI caches
         if: ${{ always() && env.CACHE_ENABLED == 'true' }}
@@ -296,7 +296,7 @@ jobs:
             checkpoint_pid=$!
             trap '[ -n "${checkpoint_pid}" ] && kill "${checkpoint_pid}" 2>/dev/null || true' EXIT INT TERM
           fi
-          kas shell kas.yml -- bitbake packagegroup-asrock-apps
+          kas shell kas.yml -c "bitbake packagegroup-asrock-apps"
 
       - name: Save Yocto OCI caches
         if: ${{ always() && env.CACHE_ENABLED == 'true' }}
