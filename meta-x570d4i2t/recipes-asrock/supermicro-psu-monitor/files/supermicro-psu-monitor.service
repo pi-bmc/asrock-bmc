@@ -1,0 +1,12 @@
+[Unit]
+Description=Supermicro PWS-505P-1H PSU monitor (sensors + inventory) for X570D4I-2T
+Wants=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
+
+[Service]
+ExecStart=/usr/bin/supermicro-psu-monitor
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

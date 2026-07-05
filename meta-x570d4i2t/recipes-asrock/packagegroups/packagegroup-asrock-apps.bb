@@ -53,6 +53,7 @@ RDEPENDS:${PN}-system = " \
         x570d4i2t-vga-enable \
         aspeed-video-watchdog \
         nct6779-bridge \
+        supermicro-psu-monitor \
         smbios-mdr \
         phosphor-ipmi-blobs \
         biosconfig-manager \

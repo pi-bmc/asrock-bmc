@@ -263,19 +263,25 @@
 
 &i2c2 {
 	/*
-	 * PSU_SMB1 SMBus (AMI IPMI.conf "PSU_SMB1"). Two devices live here, but
-	 * NEITHER is usable, so no child nodes are instantiated:
-	 *  - 0x38: Supermicro PWS-505P-1H PSU. Spec'd PMBus, but non-standard:
-	 *    the Linux generic `pmbus` driver fails capability ID, raw reads do
-	 *    not decode as LINEAR, and the stock MegaRAC SDR contains NO PSU
-	 *    power/voltage/current sensor (it never read PSU telemetry either).
+	 * PSU_SMB1 SMBus (AMI IPMI.conf "PSU_SMB1"). Two devices live here:
+	 *  - 0x38: Supermicro PWS-505P-1H PSU. It is NOT a real PMBus register
+	 *    file (it NAKs PEC and the generic `pmbus` driver fails capability
+	 *    ID) — it is a *standard IPMI FRU* EEPROM. FruDevice parses its
+	 *    Product Info area (SUPERMICRO / PWS-505P-1H / serial); the
+	 *    supermicro-psu-monitor daemon re-publishes that as a PowerSupply
+	 *    inventory item. Supermicro also stores live telemetry in the FRU
+	 *    Internal-Use
+	 *    area (0x09 temp, 0x0A/0x0B fans, 0x0C DC-good, 0x14 AC current) and
+	 *    vendor registers (0xF4 AC volts, 0xF5/F6 AC watts, 0xF2/F3 rated
+	 *    500 W, 0xF1 41 A DC) — read by the supermicro-psu-monitor daemon,
+	 *    which decodes them and publishes the PSU sensors + PowerSupply
+	 *    inventory on D-Bus. Validated against the stock MegaRAC "Power
+	 *    Source" page. No kernel client is bound here; access is raw i2c.
 	 *  - 0x3C: AMD SB-RMI (APML). Version reg 0x20 reads 0x17, but the
 	 *    SB-RMI CTRL/STATUS regs and the MP1 power mailbox NAK all BMC
 	 *    access (driver probe fails -EIO). The stock firmware ships with
 	 *    SUPPORT_APML_IFC=0 — the OEM disabled APML, and AM4/X570 silicon
 	 *    does not expose the EPYC-class SB-RMI power mailbox to the BMC.
-	 * Net: no power telemetry or power cap source exists on this board.
-	 * The bus is left enabled for manual i2c access / future probing.
 	 */
 	status = "okay";
 };

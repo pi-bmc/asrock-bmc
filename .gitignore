@@ -12,3 +12,4 @@ customrc
 .claude/scheduled_tasks.lock
 compile_commands.json
 openbmc
+.vscode-ctags*

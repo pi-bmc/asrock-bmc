@@ -18,6 +18,11 @@ header:
 distro: openbmc-phosphor
 machine: x570d4i2t
 
+# The production OpenBMC firmware image (bmcweb, entity-manager, phosphor,
+# dbus-sensors, ...). Without this key kas defaults to `core-image-minimal`,
+# a bare busybox rootfs with none of the BMC stack — NOT flashable.
+target: obmc-phosphor-image
+
 repos:
   # ---------------------------------------------------------------------------
   # Upstream OpenBMC.
@@ -63,6 +68,11 @@ local_conf_header:
     USER_CLASSES ?= "buildstats"
     PATCHRESOLVE = "noop"
     CONF_VERSION = "2"
+    # Pin the caches under TOPDIR (<workspace>/build) so CI (.github/workflows/
+    # build.yaml) can archive/restore them at a known path. These are the Yocto
+    # defaults, made explicit.
+    DL_DIR = "${TOPDIR}/downloads"
+    SSTATE_DIR = "${TOPDIR}/sstate-cache"
     BB_DISKMON_DIRS = "\
         STOPTASKS,${TMPDIR},1G,100K \
         STOPTASKS,${DL_DIR},1G,100K \
