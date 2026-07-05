@@ -68,6 +68,10 @@ local_conf_header:
     USER_CLASSES ?= "buildstats"
     PATCHRESOLVE = "noop"
     CONF_VERSION = "2"
+    # Use the official prebuilt node binaries (meta-x570d4i2t/recipes-devtools/
+    # nodejs/) instead of compiling nodejs-native from source for webui-vue;
+    # saves ~30 CPU-minutes on cold builds.
+    PREFERRED_PROVIDER_nodejs-native = "nodejs-prebuilt-native"
     # Pin the caches under TOPDIR (<workspace>/build) so CI (.github/workflows/
     # build.yaml) can archive/restore them at a known path. These are the Yocto
     # defaults, made explicit.
