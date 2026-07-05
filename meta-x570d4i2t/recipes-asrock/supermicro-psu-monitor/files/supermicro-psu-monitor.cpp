@@ -294,6 +294,14 @@ int main()
     boost::asio::io_context io;
     auto conn = std::make_shared<sdbusplus::asio::connection>(io);
     sdbusplus::asio::object_server server(conn);
+    // bmcweb reads both sensor data and inventory-item interfaces via
+    // GetManagedObjects called at /xyz/openbmc_project/sensors and
+    // /xyz/openbmc_project/inventory respectively. Without an ObjectManager at
+    // each path those calls fail: individual sensor reads return InternalError
+    // and the PSU inventory (Item.PowerSupply/Asset) is invisible to bmcweb.
+    // Every dbus-sensors daemon registers these; do the same.
+    server.add_manager("/xyz/openbmc_project/sensors");
+    server.add_manager("/xyz/openbmc_project/inventory");
 
     // ---- one-shot: read identity from the FRU product area ----
     Vpd vpd;
