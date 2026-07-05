@@ -38,7 +38,7 @@ repos:
   # ---------------------------------------------------------------------------
   openbmc:
     url: https://github.com/openbmc/openbmc.git
-    commit: 1a2564f920cf4b8ba9c7c5edc5d448314d841682
+    commit: dfa98872f00c31da7d273edbc7083716f7f55b39
     layers:
       meta:
       meta-openembedded/meta-oe:
