@@ -76,7 +76,7 @@ constexpr int pollSeconds = 5;
 const std::string chassisPath =
     "/xyz/openbmc_project/inventory/system/board/ASRock_Rack_X570D4I";
 const std::string psuInvPath =
-    "/xyz/openbmc_project/inventory/system/powersupply/Supermicro_PWS_505P_1H";
+    "/xyz/openbmc_project/inventory/system/powersupply/psu0";
 const std::string sensorRoot = "/xyz/openbmc_project/sensors/";
 
 using Association = std::tuple<std::string, std::string, std::string>;
