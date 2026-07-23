@@ -33,16 +33,18 @@
 // PAYLOAD FORMAT (confirmed by capture): the SetPayload StartTransfer header
 // carries payloadType 1 and a ~13.7 KB body, i.e. Intel-Aptio BIOS-config XML
 // (Intel server BIOS is AMI Aptio, so this board's AMI BIOS emits the same XML).
-// This handler runs the full chunked transfer + CRC32 and persists the assembled
-// payload to /var/lib/asrock-bios-config/PayloadN. Turning that XML into the
-// BaseBIOSTable D-Bus property needs the concrete Aptio schema — capture PayloadN
-// from a boot, then add an XML->BiosBaseTable parser (it can reuse the property
-// commit in the [[maybe_unused]] setBaseBIOSTable() below). Transfers are ACKed
-// as successful meanwhile so the BIOS handshake completes.
+// This handler runs the full chunked transfer + CRC32, persists the assembled
+// payload to /var/lib/asrock-bios-config/PayloadN, then parses it into the
+// BaseBIOSTable D-Bus property via biosxml.hpp (Intel's tinyxml2 Aptio parser:
+// bios::Xml -> doDepexCompute -> getBaseTable -> commit), exactly as
+// intel-ipmi-oem's ipmiOEMSetPayload does. A parse failure is logged but the
+// transfer is still ACKed so the BIOS handshake completes.
 //
 // The kcsmonitor filter (same library) logs every inbound request over KCS.
 
 #include "biosconfigcommands.hpp"
+
+#include "biosxml.hpp"
 
 #include <ipmid/api.hpp>
 #include <ipmid/message.hpp>
@@ -59,7 +61,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -193,136 +194,19 @@ static void storeCapability()
 }
 
 // ---------------------------------------------------------------------------
-// JSON <-> D-Bus value mapping
+// Commit a parsed BIOS attribute table to the BIOSConfig.Manager BaseBIOSTable
+// property. The table type comes straight from bios::Xml::getBaseTable(), so no
+// conversion is needed — it already has the D-Bus shape a{s(sbsssvva(svs))}.
 // ---------------------------------------------------------------------------
-static std::string attrTypeToDbus(const std::string& s)
+static bool commitBaseBIOSTable(const bios::BiosBaseTableType& table)
 {
-    if (s.rfind("xyz.openbmc_project", 0) == 0)
-    {
-        return s; // already a fully-qualified enum string
-    }
-    return std::string(attrTypePrefix) + s;
-}
-
-static std::string boundTypeToDbus(const std::string& s)
-{
-    if (s.rfind("xyz.openbmc_project", 0) == 0)
-    {
-        return s;
-    }
-    return std::string(boundTypePrefix) + s;
-}
-
-static std::string stripEnumPrefix(const std::string& s)
-{
-    auto pos = s.rfind('.');
-    return (pos == std::string::npos) ? s : s.substr(pos + 1);
-}
-
-static DbusVariant jsonToVariant(const Json& j)
-{
-    if (j.is_boolean())
-    {
-        return static_cast<int64_t>(j.get<bool>() ? 1 : 0);
-    }
-    if (j.is_number_integer() || j.is_number_unsigned())
-    {
-        return static_cast<int64_t>(j.get<int64_t>());
-    }
-    if (j.is_number_float())
-    {
-        return static_cast<int64_t>(llround(j.get<double>()));
-    }
-    if (j.is_string())
-    {
-        return j.get<std::string>();
-    }
-    return j.dump(); // objects/arrays: keep something rather than throw
-}
-
-// ---------------------------------------------------------------------------
-// Populate xyz.openbmc_project.BIOSConfig.Manager.BaseBIOSTable from a JSON
-// document. Accepts either {"attributes": {name: {...}}} or a bare {name: {...}}
-// top-level map. Returns true on success.
-//
-// Currently unused: the AMI BIOS was found to push Aptio XML, not JSON. Kept as
-// the reference D-Bus commit path — the forthcoming XML parser builds the same
-// BiosBaseTable and reuses the property-Set block at the bottom of this fn.
-// ---------------------------------------------------------------------------
-[[maybe_unused]] static bool
-    setBaseBIOSTable(const std::vector<uint8_t>& payload)
-{
-    Json root;
-    try
-    {
-        root = Json::parse(payload.begin(), payload.end());
-    }
-    catch (const std::exception& e)
-    {
-        log<level::ERR>("biosconfig: BaseBIOSTable JSON parse failed",
-                        entry("ERR=%s", e.what()));
-        return false;
-    }
-
-    const Json& attrs = root.contains("attributes") ? root["attributes"] : root;
-    if (!attrs.is_object())
-    {
-        log<level::ERR>("biosconfig: payload has no attribute object");
-        return false;
-    }
-
-    BiosBaseTable table;
-    for (auto it = attrs.begin(); it != attrs.end(); ++it)
-    {
-        const std::string& name = it.key();
-        const Json& a = it.value();
-        if (!a.is_object())
-        {
-            continue;
-        }
-
-        std::string atype =
-            attrTypeToDbus(a.value("attributeType", std::string("String")));
-        bool readOnly = a.value("readOnly", false);
-        std::string display = a.value("displayName", name);
-        std::string desc = a.value("description", std::string(""));
-        std::string menu = a.value("menuPath", std::string(""));
-
-        DbusVariant cur = a.contains("currentValue")
-                              ? jsonToVariant(a["currentValue"])
-                              : DbusVariant(std::string(""));
-        DbusVariant def =
-            a.contains("defaultValue") ? jsonToVariant(a["defaultValue"]) : cur;
-
-        BiosOptions options;
-        if (a.contains("options") && a["options"].is_array())
-        {
-            for (const Json& o : a["options"])
-            {
-                std::string bt =
-                    boundTypeToDbus(o.value("boundType", std::string("OneOf")));
-                DbusVariant bv = o.contains("value")
-                                     ? jsonToVariant(o["value"])
-                                     : DbusVariant(std::string(""));
-                std::string bn = o.value("valueName", std::string(""));
-                options.emplace_back(std::move(bt), std::move(bv),
-                                     std::move(bn));
-            }
-        }
-
-        table.emplace(name, BiosTableEntry{std::move(atype), readOnly,
-                                           std::move(display), std::move(desc),
-                                           std::move(menu), std::move(cur),
-                                           std::move(def), std::move(options)});
-    }
-
     try
     {
         auto bus = ::getSdBus();
         auto m = bus->new_method_call(biosMgrService, biosMgrPath,
                                       "org.freedesktop.DBus.Properties", "Set");
         m.append(std::string(biosMgrIface), std::string("BaseBIOSTable"),
-                 std::variant<BiosBaseTable>(table));
+                 std::variant<bios::BiosBaseTableType>(table));
         bus->call(m);
     }
     catch (const std::exception& e)
@@ -332,48 +216,42 @@ static DbusVariant jsonToVariant(const Json& j)
         return false;
     }
 
-    log<level::INFO>("biosconfig: BaseBIOSTable populated from host payload",
+    log<level::INFO>("biosconfig: BaseBIOSTable populated from BIOS XML",
                      entry("COUNT=%zu", table.size()));
     return true;
 }
 
 // ---------------------------------------------------------------------------
-// Serialise the manager's PendingAttributes to JSON for GetPayload readback.
-// Currently unused (readback of staged changes will serve XML, matching the
-// BIOS's push format); kept for reference/debug tooling.
+// Parse an assembled Aptio BIOS-config XML file into BaseBIOSTable, mirroring
+// intel-ipmi-oem ipmiOEMSetPayload: construct bios::Xml(path), run the depex
+// compute, pull the base table, and commit it. tinyxml2 reads from a file, so
+// the caller passes the path the payload was persisted to. Returns true if the
+// table was populated on D-Bus.
 // ---------------------------------------------------------------------------
-[[maybe_unused]] static std::vector<uint8_t> pendingAttributesJson()
+static bool processBiosXml(const std::string& xmlPath)
 {
-    Json out;
-    Json attrs = Json::object();
     try
     {
-        auto bus = ::getSdBus();
-        auto m = bus->new_method_call(biosMgrService, biosMgrPath,
-                                      "org.freedesktop.DBus.Properties", "Get");
-        m.append(std::string(biosMgrIface), std::string("PendingAttributes"));
-        auto reply = bus->call(m);
-        std::variant<PendingAttributes> v;
-        reply.read(v);
-        const auto& pending = std::get<PendingAttributes>(v);
-        for (const auto& [name, entryTuple] : pending)
+        bios::Xml biosxml(xmlPath.c_str());
+        if (!biosxml.doDepexCompute())
         {
-            const auto& atype = std::get<0>(entryTuple);
-            const auto& value = std::get<1>(entryTuple);
-            Json a;
-            a["attributeType"] = stripEnumPrefix(atype);
-            std::visit([&a](const auto& x) { a["value"] = x; }, value);
-            attrs[name] = a;
+            log<level::WARNING>(
+                "biosconfig: depex compute reported errors; continuing");
         }
+        bios::BiosBaseTableType table;
+        if (!biosxml.getBaseTable(table))
+        {
+            log<level::ERR>("biosconfig: getBaseTable produced no attributes");
+            return false;
+        }
+        return commitBaseBIOSTable(table);
     }
     catch (const std::exception& e)
     {
-        log<level::WARNING>("biosconfig: PendingAttributes read failed",
-                            entry("ERR=%s", e.what()));
+        log<level::ERR>("biosconfig: BIOS XML parse failed",
+                        entry("ERR=%s", e.what()));
+        return false;
     }
-    out["pendingAttributes"] = attrs;
-    std::string s = out.dump();
-    return std::vector<uint8_t>(s.begin(), s.end());
 }
 
 // ---------------------------------------------------------------------------
@@ -562,21 +440,30 @@ static ipmi::RspType<uint32_t> ipmiSetPayload(uint8_t stateByte,
             recordPayload(payloadType, buf, whole, version,
                           static_cast<uint8_t>(PayloadStatus::valid));
 
-            // The AMI BIOS sends BIOS-config XML (payloadType 0/1). Parsing
-            // that Aptio XML into BaseBIOSTable requires the concrete schema —
-            // capture Payload0/Payload1 from a live boot, then wire an
-            // XML->BiosBaseTable parser here (it can reuse the D-Bus commit in
-            // setBaseBIOSTable()). Until then we still ACK the transfer as
-            // successful so the BIOS handshake completes and the bytes land.
+            // The AMI BIOS sends Aptio BIOS-config XML (payloadType 0/1). Parse
+            // the just-persisted file into BaseBIOSTable via bios::Xml. A parse
+            // failure is logged but does NOT fail the transfer: the bytes are on
+            // disk and the BIOS handshake should still complete.
             if (payloadType == static_cast<uint8_t>(PayloadType::xmlType0) ||
                 payloadType == static_cast<uint8_t>(PayloadType::xmlType1))
             {
-                log<level::INFO>(
-                    "biosconfig: BIOS-config XML payload captured "
-                    "(BaseBIOSTable parser pending)",
-                    entry("TYPE=%u", static_cast<unsigned>(payloadType)),
-                    entry("BYTES=%u",
-                          static_cast<unsigned>(buf.size())));
+                std::string xmlPath = std::string(stateDir) + "/Payload" +
+                                      std::to_string(payloadType);
+                if (processBiosXml(xmlPath))
+                {
+                    log<level::INFO>(
+                        "biosconfig: BaseBIOSTable updated from BIOS XML",
+                        entry("TYPE=%u", static_cast<unsigned>(payloadType)),
+                        entry("BYTES=%u", static_cast<unsigned>(buf.size())));
+                }
+                else
+                {
+                    log<level::WARNING>(
+                        "biosconfig: BIOS XML captured but BaseBIOSTable not "
+                        "updated (see prior errors)",
+                        entry("TYPE=%u", static_cast<unsigned>(payloadType)),
+                        entry("BYTES=%u", static_cast<unsigned>(buf.size())));
+                }
             }
             return ipmi::responseSuccess(static_cast<uint32_t>(buf.size()));
         }

@@ -27,11 +27,14 @@ SRC_URI = " \
     file://src/kcsmonitor.cpp \
     file://src/biosconfigcommands.cpp \
     file://src/biosconfigcommands.hpp \
+    file://src/biosxml.hpp \
+    file://src/types.hpp \
     "
 
 S = "${UNPACKDIR}"
 DEPENDS = " \
     boost \
+    libtinyxml2 \
     nlohmann-json \
     phosphor-ipmi-host \
     phosphor-logging \

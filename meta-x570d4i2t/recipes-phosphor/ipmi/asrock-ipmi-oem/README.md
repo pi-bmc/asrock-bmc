@@ -29,16 +29,16 @@ This replaces the removed USB Redfish Host Interface config push.
 | 0x30 | 0xD7 | SetBIOSPwdHashInfo | Admin | store admin password hash + seed → `bios-settings-manager/seedData` |
 | 0x30 | 0xD8 | GetBIOSPwdHash | User | return seed + stored hash |
 
-**Key adaptation vs. Intel:** Intel ships proprietary BIOS Setup *XML* (parsed by
-`biosxml.hpp` + a spawned converter). That is removed. The `SetPayload` transport
-here carries a **JSON** document (PayloadType 0) deserialised straight into the
-`xyz.openbmc_project.BIOSConfig.Manager` `BaseBIOSTable` property — no vendor
-translation, no `oemcommands.hpp`, no `/var/oob`. The commands stay on Intel's
-**NetFn 0x30** path (cmds 0xD3–0xD8): a live KCS capture confirms the stock AMI
-BIOS drives exactly this protocol — it sends `SetBIOSCap` (0xD3) on NetFn 0x30
-during POST — so the handlers must match Intel's numbers. The chunked
-transfer/CRC protocol is unchanged. All tunables (NetFn/cmd, D-Bus names, paths)
-are at the top of `biosconfigcommands.hpp`.
+**Relationship to Intel:** this is a close port of intel-ipmi-oem's
+`biosconfigcommands.cpp`. A live KCS capture confirms the stock AMI BIOS drives
+exactly Intel's protocol — it sends `SetBIOSCap` (0xD3) on **NetFn 0x30** during
+POST and pushes Aptio BIOS Setup **XML** via `SetPayload` — so the handlers keep
+Intel's NetFn/cmd numbers, packed struct layouts, chunked-transfer state machine,
+and CRC32, and reuse Intel's `biosxml.hpp` to turn the XML into `BaseBIOSTable` on
+`xyz.openbmc_project.BIOSConfig.Manager`. Trimmed vs. Intel: no `oemcommands.hpp`
+coupling and no `/var/oob` (payloads persist under `/var/lib/asrock-bios-config`).
+All tunables (NetFn/cmd, D-Bus names, paths) are at the top of
+`biosconfigcommands.hpp`.
 
 ### Payload format — Aptio XML (confirmed by capture)
 
@@ -54,22 +54,25 @@ JSON (Intel server BIOS is AMI Aptio; this board's AMI BIOS emits the same XML).
 The StartTransfer struct is Intel's exact packed layout
 `{u16 version, u32 totalSize, u32 totalChecksum, u8 flag}`.
 
-The handler runs the full chunked transfer + CRC32 and persists the assembled
-payload to `/var/lib/asrock-bios-config/PayloadN`. **Turning that XML into the
-`BaseBIOSTable` D-Bus property is the remaining work** and needs the concrete
-Aptio schema:
+The handler runs the full chunked transfer + CRC32, persists the assembled
+payload to `/var/lib/asrock-bios-config/PayloadN`, then **parses it into the
+`BaseBIOSTable` D-Bus property** using `biosxml.hpp` — Intel's `tinyxml2`-based
+Aptio `<biosknobs>/<knob>` parser — exactly as intel-ipmi-oem's
+`ipmiOEMSetPayload` does:
 
-1. Boot the host, then `cat /var/lib/asrock-bios-config/Payload1` to grab the XML.
-2. Add an `XML → BiosBaseTable` parser in `biosconfigcommands.cpp` — it can reuse
-   the D-Bus property-`Set` block in the (currently `[[maybe_unused]]`)
-   `setBaseBIOSTable()` helper, which already builds the exact
-   `a{s(sbsssvva(svs))}` structure the manager expects.
+```
+bios::Xml biosxml(path);        // tinyxml2 loads the persisted XML file
+biosxml.doDepexCompute();        // evaluate each knob's depex expression
+biosxml.getBaseTable(table);     // -> bios::BiosBaseTableType (a{s(sbsssvva(svs))})
+commitBaseBIOSTable(table);      // Properties.Set BaseBIOSTable on the manager
+```
 
-Transfers are ACKed as successful in the meantime so the BIOS handshake completes
-and the bytes always land on disk. The `setBaseBIOSTable()` JSON helper documents
-the target D-Bus shape: `attributeType` ∈ {Enumeration, String, Password, Integer,
-Boolean}; `boundType` ∈ {OneOf, LowerBound, UpperBound, ScalarIncrement,
-MinStringLength, MaxStringLength}.
+`biosxml.hpp` (added from intel-ipmi-oem) needs `tinyxml2` (recipe `DEPENDS +=
+libtinyxml2`) and an `ipmi::DbusVariant`, supplied by the local `types.hpp` shim
+(`variant<int64_t,string>`, matching the manager property). Every enumeration
+knob maps to an `AttributeType.Enumeration` with `BoundType.OneOf` options. A
+parse failure is logged but the transfer is still ACKed, so the BIOS handshake
+completes and the raw XML always remains on disk for inspection.
 
 ## Historical / reference command groups (removed from the build)
 

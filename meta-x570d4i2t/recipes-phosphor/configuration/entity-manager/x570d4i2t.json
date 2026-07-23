@@ -185,8 +185,39 @@
             },
             {
                 "Index": 6,
-                "Name": "1.05V_PROM_S5",
+                "Name": "1.2V_CLDO",
                 "PowerState": "On",
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 1.38
+                    },
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper non critical",
+                        "Severity": 0,
+                        "Value": 1.32
+                    },
+                    {
+                        "Direction": "less than",
+                        "Name": "lower non critical",
+                        "Severity": 0,
+                        "Value": 1.08
+                    },
+                    {
+                        "Direction": "less than",
+                        "Name": "lower critical",
+                        "Severity": 1,
+                        "Value": 1.02
+                    }
+                ],
+                "Type": "ADC"
+            },
+            {
+                "Index": 7,
+                "Name": "1.05V_PROM_S5",
                 "Thresholds": [
                     {
                         "Direction": "greater than",
@@ -211,39 +242,6 @@
                         "Name": "lower critical",
                         "Severity": 1,
                         "Value": 0.89
-                    }
-                ],
-                "Type": "ADC"
-            },
-            {
-                "Index": 7,
-                "Name": "2.5V_PROM",
-                "PowerState": "On",
-                "ScaleFactor": 0.5375,
-                "Thresholds": [
-                    {
-                        "Direction": "greater than",
-                        "Name": "upper critical",
-                        "Severity": 1,
-                        "Value": 2.88
-                    },
-                    {
-                        "Direction": "greater than",
-                        "Name": "upper non critical",
-                        "Severity": 0,
-                        "Value": 2.74
-                    },
-                    {
-                        "Direction": "less than",
-                        "Name": "lower non critical",
-                        "Severity": 0,
-                        "Value": 2.26
-                    },
-                    {
-                        "Direction": "less than",
-                        "Name": "lower critical",
-                        "Severity": 1,
-                        "Value": 2.12
                     }
                 ],
                 "Type": "ADC"

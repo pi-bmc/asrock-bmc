@@ -36,11 +36,18 @@ sdbusplus_dep            = dependency('sdbusplus')
 ipmid_dep                = dependency('libipmid')
 nlohmann_json_dep        = dependency('nlohmann_json')
 
+tinyxml_dep = dependency(
+    'tinyxml2',
+    default_options: ['tests=false'],
+    include_type: 'system',
+)
+
 asrock_oem_deps = [
     ipmid_dep,
     phosphor_logging_dep,
     sdbusplus_dep,
     nlohmann_json_dep,
+    tinyxml_dep,
 ]
 
 # -----------------------------------------------------------------------
