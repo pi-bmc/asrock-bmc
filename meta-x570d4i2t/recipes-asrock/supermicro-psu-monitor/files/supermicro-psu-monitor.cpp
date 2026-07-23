@@ -1,6 +1,6 @@
 // supermicro-psu-monitor
 //
-// Consolidated monitor for the Supermicro PWS-505P-1H PSU on the ASRock
+// Sensor monitor for the Supermicro PWS-505P-1H PSU on the ASRock
 // X570D4I-2T (PSU_SMB1 = BMC i2c-2, addr 0x38).
 //
 // This PSU is NOT a real PMBus register device: every SMBus read (byte/word/
@@ -18,16 +18,20 @@
 //   0x14  AC current   A = raw/16
 //   0xF4  AC voltage   V (direct)
 //   0xF5/0xF6  AC power W (little-endian 16-bit)
-// Identity (Manufacturer/Model/Serial/Version) is parsed from the standard
-// IPMI FRU Product Info area.
 //
-// It publishes, from one daemon:
-//   * six sensors (temperature/fan_tach/voltage/current/power) with thresholds
-//     and a chassis association (so they list under the chassis in Redfish/IPMI)
-//   * a PowerSupply inventory item (Item.PowerSupply + Asset + Revision +
-//     OperationalStatus) that OWNS the object
-//   * the chassis "powered_by" association, so the PSU appears in Redfish
-//     PowerSubsystem/PowerSupplies (and the WebUI "Power supplies" card).
+// It publishes six sensors (temperature/fan_tach/voltage/current/power) with
+// thresholds, associated to the PSU inventory item - nothing else. The
+// PowerSupply inventory object (Item.PowerSupply + Asset/Revision templated
+// from the FRU) and the PSU's chassis relationships (powering / contained_by)
+// are owned by EntityManager via configurations/supermicro-pws-505p-1h.json
+// (FRU probe + Topology Port pairs against the board/chassis configs).
+//
+// The sensors' "chassis"/"all_sensors" association target is resolved at
+// runtime from the EM Topology: the mapper object <psu>/powering names the
+// board this PSU powers. That keeps the sensors listed in the Redfish
+// Chassis Sensors collection and keeps EnvironmentMetrics.PowerWatts
+// working (via the TotalPower purpose tag below) without hardcoding any
+// board path here - renaming the board in config Just Works.
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -46,6 +50,7 @@
 #include <memory>
 #include <string>
 #include <tuple>
+#include <variant>
 #include <vector>
 
 // ---- inline Linux SMBus ioctl bits (avoid libi2c / header-version churn) ----
@@ -72,9 +77,8 @@ namespace
 constexpr int psuBus = 2;
 constexpr uint8_t psuAddr = 0x38;
 constexpr int pollSeconds = 5;
+constexpr int chassisRetrySeconds = 10;
 
-const std::string chassisPath =
-    "/xyz/openbmc_project/inventory/system/board/ASRock_Rack_X570D4I";
 const std::string psuInvPath =
     "/xyz/openbmc_project/inventory/system/powersupply/psu0";
 const std::string sensorRoot = "/xyz/openbmc_project/sensors/";
@@ -110,75 +114,13 @@ int readByte(int fd, uint8_t cmd)
     return d.byte;
 }
 
-// Read a standard IPMI FRU type/length string field, advancing 'off'.
-std::string readFruField(int fd, int& off)
-{
-    int tl = readByte(fd, static_cast<uint8_t>(off++));
-    if (tl < 0 || tl == 0xC1) // 0xC1 = end-of-fields marker
-    {
-        return {};
-    }
-    int len = tl & 0x3F;
-    std::string s;
-    for (int i = 0; i < len; ++i)
-    {
-        int b = readByte(fd, static_cast<uint8_t>(off++));
-        if (b < 0)
-        {
-            break;
-        }
-        s.push_back(static_cast<char>(b));
-    }
-    return s;
-}
-
-struct Vpd
-{
-    std::string manufacturer = "Supermicro";
-    std::string model = "PWS-505P-1H";
-    std::string partNumber = "PWS-505P-1H";
-    std::string version;
-    std::string serial;
-};
-
-// Parse the FRU Product Info Area (offset from common header byte 0x04, x8).
-Vpd readVpd(int fd)
-{
-    Vpd v;
-    int prodOff = readByte(fd, 0x04);
-    if (prodOff <= 0)
-    {
-        return v;
-    }
-    int off = prodOff * 8 + 3; // skip format-version, length, language bytes
-    std::string mfr = readFruField(fd, off);
-    std::string name = readFruField(fd, off);
-    std::string part = readFruField(fd, off);
-    std::string ver = readFruField(fd, off);
-    std::string ser = readFruField(fd, off);
-    if (!mfr.empty())
-    {
-        v.manufacturer = mfr;
-    }
-    if (!name.empty())
-    {
-        v.model = name;
-    }
-    if (!part.empty())
-    {
-        v.partNumber = part;
-    }
-    v.version = ver;
-    v.serial = ser;
-    return v;
-}
-
 // ------------------------------- Sensor -------------------------------------
 struct Sensor
 {
     DBusIface value;
     DBusIface opStatus;
     DBusIface avail;
+    DBusIface assoc;
     DBusIface warn; // may be null
     DBusIface crit; // may be null
     double warnHigh = std::numeric_limits<double>::quiet_NaN();
@@ -273,15 +215,17 @@ std::shared_ptr<Sensor>
         s->crit->initialize();
     }
 
-    // Associate the sensor with the chassis (so it lists under the chassis
-    // Sensors collection) and with the PSU inventory (so it groups under it).
-    auto assoc =
+    // Associate the sensor with its owning PSU inventory item. The
+    // "chassis"/"all_sensors" entry initially targets the PSU item too and
+    // is re-pointed at the powering target (the board) once the EM Topology
+    // association resolves - see resolveChassis in main.
+    s->assoc =
         obj.add_interface(path, "xyz.openbmc_project.Association.Definitions");
-    assoc->register_property(
+    s->assoc->register_property(
         "Associations",
-        std::vector<Association>{{"chassis", "all_sensors", chassisPath},
+        std::vector<Association>{{"chassis", "all_sensors", psuInvPath},
                                  {"inventory", "sensors", psuInvPath}});
-    assoc->initialize();
+    s->assoc->initialize();
 
     return s;
 }
@@ -294,61 +238,10 @@ int main()
     boost::asio::io_context io;
     auto conn = std::make_shared<sdbusplus::asio::connection>(io);
     sdbusplus::asio::object_server server(conn);
-    // bmcweb reads both sensor data and inventory-item interfaces via
-    // GetManagedObjects called at /xyz/openbmc_project/sensors and
-    // /xyz/openbmc_project/inventory respectively. Without an ObjectManager at
-    // each path those calls fail: individual sensor reads return InternalError
-    // and the PSU inventory (Item.PowerSupply/Asset) is invisible to bmcweb.
-    // Every dbus-sensors daemon registers these; do the same.
+    // bmcweb reads sensor data via GetManagedObjects at
+    // /xyz/openbmc_project/sensors; without this ObjectManager every sensor
+    // read returns InternalError. Every dbus-sensors daemon registers it.
     server.add_manager("/xyz/openbmc_project/sensors");
-    server.add_manager("/xyz/openbmc_project/inventory");
-
-    // ---- one-shot: read identity from the FRU product area ----
-    Vpd vpd;
-    if (int fd = openPsu(); fd >= 0)
-    {
-        vpd = readVpd(fd);
-        ::close(fd);
-    }
-
-    // ---- PowerSupply inventory (this daemon owns the object) ----
-    auto item =
-        server.add_interface(psuInvPath, "xyz.openbmc_project.Inventory.Item");
-    item->register_property("Present", true);
-    item->register_property("PrettyName", std::string("Supermicro PWS-505P-1H"));
-    item->initialize();
-
-    server.add_interface(psuInvPath,
-                         "xyz.openbmc_project.Inventory.Item.PowerSupply")
-        ->initialize();
-
-    auto asset = server.add_interface(
-        psuInvPath, "xyz.openbmc_project.Inventory.Decorator.Asset");
-    asset->register_property("Manufacturer", vpd.manufacturer);
-    asset->register_property("Model", vpd.model);
-    asset->register_property("PartNumber", vpd.partNumber);
-    asset->register_property("SerialNumber", vpd.serial);
-    asset->register_property("BuildDate", std::string(""));
-    asset->register_property("SparePartNumber", std::string(""));
-    asset->initialize();
-
-    auto rev = server.add_interface(
-        psuInvPath, "xyz.openbmc_project.Inventory.Decorator.Revision");
-    rev->register_property("Version", vpd.version);
-    rev->initialize();
-
-    auto psuOp = server.add_interface(
-        psuInvPath, "xyz.openbmc_project.State.Decorator.OperationalStatus");
-    psuOp->register_property("Functional", true);
-    psuOp->initialize();
-
-    // chassis <- powered_by -> this PSU (drives Redfish PowerSubsystem)
-    auto psuAssoc = server.add_interface(
-        psuInvPath, "xyz.openbmc_project.Association.Definitions");
-    psuAssoc->register_property(
-        "Associations",
-        std::vector<Association>{{"powering", "powered_by", chassisPath}});
-    psuAssoc->initialize();
 
     // ---- sensors ----
     auto temp = makeSensor(server, "temperature", "PSU_Temp", "DegreesC", 0, 127,
@@ -363,17 +256,14 @@ int main()
                           kNaN, kNaN, kNaN);
     auto pin = makeSensor(server, "power", "PSU_Input_Power", "Watts", 0, 600,
                           kNaN, 525, kNaN);
+    std::vector<std::shared_ptr<Sensor>> allSensors{temp, fan1, fan2,
+                                                    vin,  iin,  pin};
 
-    // Tag PSU AC-input power as the chassis TotalPower. bmcweb sources
-    // Redfish Chassis/<id>/EnvironmentMetrics -> PowerWatts.Reading from the
-    // single chassis-associated power sensor that implements
-    // xyz.openbmc_project.Sensor.Purpose with Purpose == TotalPower (see
-    // bmcweb environment_metrics.hpp getPowerWatts). The web UI's power page
-    // (usePowerControl -> PowerWatts.Reading) reads exactly that, so without
-    // this interface "Power consumption" renders as Not available. On this
-    // single-PSU box the PSU AC input power is the whole-chassis draw. The
-    // required Sensor.Value + all_sensors/chassis association are already set
-    // by makeSensor above; this only adds the Purpose tag.
+    // Tag PSU AC-input power as TotalPower (on this single-PSU box the PSU AC
+    // input is the whole-system draw). bmcweb environment_metrics.hpp fills
+    // Chassis/<id>/EnvironmentMetrics -> PowerWatts.Reading from the single
+    // Purpose==TotalPower power sensor reached via that chassis's all_sensors
+    // association (which resolveChassis below establishes).
     auto pinPurpose = server.add_interface(
         sensorRoot + "power/PSU_Input_Power",
         "xyz.openbmc_project.Sensor.Purpose");
@@ -383,18 +273,55 @@ int main()
             "xyz.openbmc_project.Sensor.Purpose.SensorPurpose.TotalPower"});
     pinPurpose->initialize();
 
+    // ---- resolve the chassis from EM Topology (retry until it appears) ----
+    // <psu>/powering is materialized by the mapper from the EM Topology
+    // "GenericPowerPort" pair; its endpoint is the board this PSU powers.
+    auto chassisTimer = std::make_shared<boost::asio::steady_timer>(io);
+    auto resolveChassis = std::make_shared<std::function<void()>>();
+    *resolveChassis = [conn, chassisTimer, resolveChassis, allSensors]() {
+        conn->async_method_call(
+            [chassisTimer, resolveChassis,
+             allSensors](const boost::system::error_code& ec,
+                         const std::variant<std::vector<std::string>>& eps) {
+                const std::vector<std::string>* v =
+                    std::get_if<std::vector<std::string>>(&eps);
+                if (ec || v == nullptr || v->empty())
+                {
+                    chassisTimer->expires_after(
+                        std::chrono::seconds(chassisRetrySeconds));
+                    chassisTimer->async_wait(
+                        [resolveChassis](const boost::system::error_code& e) {
+                            if (!e)
+                            {
+                                (*resolveChassis)();
+                            }
+                        });
+                    return;
+                }
+                const std::string& chassis = v->front();
+                for (const auto& s : allSensors)
+                {
+                    s->assoc->set_property(
+                        "Associations",
+                        std::vector<Association>{
+                            {"chassis", "all_sensors", chassis},
+                            {"inventory", "sensors", psuInvPath}});
+                }
+            },
+            "xyz.openbmc_project.ObjectMapper", psuInvPath + "/powering",
+            "org.freedesktop.DBus.Properties", "Get",
+            "xyz.openbmc_project.Association", "endpoints");
+    };
+    (*resolveChassis)();
+
     // ---- poll loop ----
     auto timer = std::make_shared<boost::asio::steady_timer>(io);
     std::function<void()> poll = [&, timer]() {
         int fd = openPsu();
-        bool good = false;
         if (fd >= 0)
         {
             int status = readByte(fd, 0x0C);
-            good = (status == 0x01);
             bool present = (status >= 0);
-
-            psuOp->set_property("Functional", good);
 
             int t = readByte(fd, 0x09);
             if (t > 0 && t < 125)
@@ -445,7 +372,6 @@ int main()
         if (fd < 0)
         {
             // PSU not answering: mark everything unavailable.
-            psuOp->set_property("Functional", false);
             for (auto* s : {&temp, &fan1, &fan2, &vin, &iin, &pin})
             {
                 (*s)->markUnavailable();
