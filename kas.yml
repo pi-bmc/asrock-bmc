@@ -89,3 +89,4 @@ local_conf_header:
     # Shared download and sstate directories (can be overridden per user)
     DL_DIR = "/opt/yocto/downloads"
     SSTATE_DIR = "/opt/yocto/sstate-cache"
+    BB_HASHSERVE_DB_DIR = "${SSTATE_DIR}"
