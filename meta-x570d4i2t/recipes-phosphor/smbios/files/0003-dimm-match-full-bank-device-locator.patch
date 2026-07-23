@@ -1,0 +1,62 @@
+From 3333333333333333333333333333333333333333 Mon Sep 17 00:00:00 2001
+From: ASRock Rack <noreply@asrock.com>
+Date: Thu, 23 Jul 2026 00:00:00 +0000
+Subject: [PATCH] dimm: match memoryLocationTable on the full bank+device
+ locator
+
+Dimm::dimmDeviceLocator() looks the memoryLocationTable.json entry up by the
+SMBIOS Type 17 Device Locator string alone.  That assumes the Device Locator is
+unique across the board, which is not true on every BIOS: the ASRock Rack
+X570D4I-2T numbers its four SO-DIMM slots per bank, emitting
+
+    Bank Locator     Device Locator
+    P0 CHANNEL A     DIMM 0
+    P0 CHANNEL A     DIMM 1
+    P0 CHANNEL B     DIMM 0
+    P0 CHANNEL B     DIMM 1
+
+so all four slots collapse onto two lookup keys and the table cannot express a
+distinct Channel for the second bank.
+
+Look the entry up by the same fully-qualified "<bank> <device>" string that is
+already published as MemoryDeviceLocator/LocationCode, and fall back to the bare
+Device Locator when that misses, so tables written against the old behaviour
+keep working unchanged.
+
+Also log the fully-qualified locator on a miss -- "Failed find the corresponding
+table for dimm DIMM 0" is ambiguous on exactly the boards this fixes.
+
+Upstream-Status: Pending
+--- a/src/dimm.cpp
++++ b/src/dimm.cpp
+@@ -226,7 +226,18 @@
+ 
+     if (!data.empty())
+     {
+-        auto it = data.find(deviceLocator);
++        // Prefer the fully-qualified "<bank> <device>" locator. A table keyed
++        // on the Device Locator alone cannot describe boards whose BIOS
++        // repeats the same Device Locator string in every bank -- the ASRock
++        // X570D4I-2T reports "DIMM 0"/"DIMM 1" under both "P0 CHANNEL A" and
++        // "P0 CHANNEL B", so four slots collapse onto two keys. Fall back to
++        // the bare Device Locator so existing tables keep working.
++        auto it = data.find(result);
++
++        if (it == data.end())
++        {
++            it = data.find(deviceLocator);
++        }
+ 
+         if (it != data.end())
+         {
+@@ -248,7 +259,7 @@
+             slot(0);
+             channel(0);
+             lg2::error("Failed find the corresponding table for dimm {DIMM}",
+-                       "DIMM", deviceLocator.c_str());
++                       "DIMM", result.c_str());
+         }
+     }
+     else
+-- 
+2.43.0

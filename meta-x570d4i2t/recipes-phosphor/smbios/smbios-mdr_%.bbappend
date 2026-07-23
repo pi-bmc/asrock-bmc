@@ -7,17 +7,27 @@ PACKAGECONFIG:remove = "cpuinfo cpuinfo-peci"
 # receiver, installed to ${libdir}/blob-ipmid).  This is the default OpenBMC path
 # for a host to push its full SMBIOS table to the BMC over KCS, inline — used by
 # our injected SmbiosBmcPushDxe (recipes-bsp/host-bios-image).  It replaces the
-# old asrock-ipmi-oem AMI-MDR (0x5D) synth path.  NOTE: the Intel MDR V2 IPMI
-# push (NetFn 0x3E) is NOT viable here — it transfers via host<->BMC VGA shared
-# memory (smbios-mdr mmaps /dev/mem at the agent's xferAddress), which this board
-# has no aperture for; the blob handler carries the data inline over KCS.
+# old asrock-ipmi-oem AMI-MDR (0x5D) synth path.  We use the blob handler (not
+# the MDRv2 agentSynchronizeData IPMI command set) because it is the standard
+# OpenBMC inline-over-KCS receiver our injected DXE targets. (This smbios-mdr's
+# MDRv2 is IPMI-message based; it has no mmap//dev/mem shared-memory path
+# (verified by grep), so there is no VGA-aperture requirement either way.)
 # Enabling this PACKAGECONFIG also pulls phosphor-ipmi-blobs into the build.
 PACKAGECONFIG:append = " smbios-ipmi-blob"
 
-# Install the DIMM socket/channel location table for this board.
-# Keys are SMBIOS Type 17 Device Locator strings as reported by the ASRock
-# BIOS (CPU1_DIMM_A1 / CPU1_DIMM_B1); values map each slot to its
-# Socket / MemoryController / Channel / Slot index for Redfish/IPMI DIMM info.
+# Install the DIMM socket/channel location table for this board. All four
+# SO-DIMM slots are listed; values map to the Socket / MemoryController /
+# Channel / Slot fields for Redfish/IPMI DIMM info.
+#
+# Keys are the fully-qualified "<bank locator> <device locator>" strings, which
+# requires 0003 below. Upstream keys this table on the SMBIOS Type 17 *Device
+# Locator* alone, but this board's BIOS numbers slots per bank and reports
+# device locators "DIMM 0" / "DIMM 1" under BOTH banks ("P0 CHANNEL A" and
+# "P0 CHANNEL B"), so all four slots collapse onto two keys and channel B
+# cannot be given its own Channel value. Confirmed on the live board: the four
+# dimm objects publish MemoryDeviceLocator "P0 CHANNEL A DIMM 0/1" and
+# "P0 CHANNEL B DIMM 0/1". A key that matches nothing makes dimm.cpp log
+# "Failed find the corresponding table for dimm ..." and zero all four fields.
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI:append = " file://memoryLocationTable.json"
 
@@ -28,6 +38,16 @@ SRC_URI:append = " file://memoryLocationTable.json"
 # the BMC already has the data -- faster host boot.  rm the file + reboot to
 # force a refresh.
 SRC_URI:append = " file://0001-smbios-blob-stat-persisted-file.patch"
+
+# Silence the benign "bios_active not found" mapper error. smbios-mdr best-effort
+# propagates the SMBIOS BIOS version to /xyz/openbmc_project/software/bios_active,
+# which this board doesn't have (its BIOS is a HostSPIFlash code-update object).
+SRC_URI:append = " file://0002-quiet-optional-bios-active-lookup.patch"
+
+# Look the memoryLocationTable up by the full "<bank> <device>" locator, falling
+# back to the bare device locator. Required for this board's per-bank DIMM
+# numbering — see the memoryLocationTable comment above.
+SRC_URI:append = " file://0003-dimm-match-full-bank-device-locator.patch"
 PATCHTOOL = "patch"
 
 do_install:append() {

@@ -1,14 +1,26 @@
 {
-    "CPU1_DIMM_A1": {
+    "P0 CHANNEL A DIMM 0": {
         "MemoryController": 0,
         "Socket": 0,
         "Slot": 0,
         "Channel": 0
     },
-    "CPU1_DIMM_B1": {
+    "P0 CHANNEL A DIMM 1": {
+        "MemoryController": 0,
+        "Socket": 0,
+        "Slot": 1,
+        "Channel": 0
+    },
+    "P0 CHANNEL B DIMM 0": {
         "MemoryController": 0,
         "Socket": 0,
         "Slot": 0,
+        "Channel": 1
+    },
+    "P0 CHANNEL B DIMM 1": {
+        "MemoryController": 0,
+        "Socket": 0,
+        "Slot": 1,
         "Channel": 1
     }
 }

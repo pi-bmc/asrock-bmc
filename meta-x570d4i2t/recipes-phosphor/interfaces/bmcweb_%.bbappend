@@ -1,8 +1,13 @@
 # bmcweb tuning for the X570D4I-2T. No OEM Redfish Host Interface routes are
 # added on this board: the in-band USB-NIC / Redfish Host Interface approach was
 # removed entirely. SMBIOS arrives over IPMI (AMI-MDR, handled in
-# asrock-ipmi-oem); BIOS configuration is served by the stock bmcweb /Bios
-# routes backed by xyz.openbmc_project.BIOSConfigManager (no host-push path).
+# asrock-ipmi-oem). The host BIOS pushes its full attribute table in-band over
+# KCS (asrock-ipmi-oem BIOS-config commands -> BaseBIOSTable); the patch below
+# re-adds the bmcweb /Bios "Attributes" view that upstream removed, so that
+# live config surfaces at /redfish/v1/Systems/system/Bios.
+
+FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
+SRC_URI += "file://0001-redfish-bios-attributes-from-basebiostable.patch"
 
 # Disable bmcweb's zstd HTTP compression.
 #

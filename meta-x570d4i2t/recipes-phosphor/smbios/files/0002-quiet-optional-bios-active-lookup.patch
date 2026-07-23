@@ -1,0 +1,41 @@
+From 2222222222222222222222222222222222222222 Mon Sep 17 00:00:00 2001
+From: ASRock Rack <noreply@asrock.com>
+Date: Thu, 23 Jul 2026 00:00:00 +0000
+Subject: [PATCH] system: don't error-log the optional bios_active lookup
+
+System::version() best-effort propagates the SMBIOS BIOS version to
+/xyz/openbmc_project/software/bios_active (Software.Version). That object only
+exists on boards whose BIOS is tracked under the legacy path; on boards using
+the newer code-update design the BIOS is a HostSPIFlash software object and
+bios_active does not exist. getService() is used ONLY for this optional lookup,
+so demote its "object not found" mapper failure from error to debug (and fix the
+swapped SERVICE/PATH log labels). The BIOS version remains available on the
+smbios System object regardless.
+
+Upstream-Status: Inappropriate [board-specific log-noise reduction]
+---
+ src/system.cpp | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+--- a/src/system.cpp
++++ b/src/system.cpp
+@@ -90,10 +90,15 @@
+     }
+     catch (const sdbusplus::exception_t& e)
+     {
+-        lg2::error("Error in mapper method call - {ERROR}, SERVICE - "
+-                   "{SERVICE}, PATH - {PATH}",
+-                   "ERROR", e.what(), "SERVICE", objectPath.c_str(), "PATH",
+-                   interface.c_str());
++        // getService() is only used for the optional BIOS-version propagation
++        // to /xyz/openbmc_project/software/bios_active. On boards using the
++        // newer code-update design (the BIOS is a HostSPIFlash software object)
++        // that legacy path does not exist, so a "not found" here is an expected
++        // condition, not an error worth logging at error level.
++        lg2::debug("Mapper lookup skipped (object absent) - {ERROR}, PATH - "
++                   "{PATH}, INTERFACE - {INTERFACE}",
++                   "ERROR", e.what(), "PATH", objectPath.c_str(), "INTERFACE",
++                   interface.c_str());
+
+         return std::string{};
+     }

@@ -1,0 +1,81 @@
+From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001
+From: ASRock Rack <noreply@asrock.com>
+Date: Thu, 23 Jul 2026 00:00:00 +0000
+Subject: [PATCH] redfish: expose BIOS Attributes from BaseBIOSTable
+
+Upstream bmcweb's /redfish/v1/Systems/<sys>/Bios GET handler no longer reads
+xyz.openbmc_project.BIOSConfig.Manager BaseBIOSTable, so the Bios resource never
+carries an "Attributes" field. On the X570D4I-2T the host AMI BIOS pushes its
+full attribute table in-band over KCS (asrock-ipmi-oem BIOS-config commands ->
+BaseBIOSTable). Re-add a read-only Attributes view (attribute name -> current
+value) so the live BIOS configuration is visible over Redfish.
+
+Upstream-Status: Inappropriate [board-specific; upstream removed this on purpose]
+---
+diff --git a/redfish-core/lib/bios.hpp b/redfish-core/lib/bios.hpp
+index ddbd77cc72..0210d79bfc 100644
+--- a/redfish-core/lib/bios.hpp
++++ b/redfish-core/lib/bios.hpp
+@@ -21,6 +21,10 @@
+ #include <functional>
+ #include <memory>
+ #include <string>
++#include <tuple>
++#include <utility>
++#include <variant>
++#include <vector>
+ 
+ namespace redfish
+ {
+@@ -63,6 +67,51 @@ inline void handleBiosServiceGet(
+     // Get the ActiveSoftwareImage and SoftwareImages
+     sw_util::populateSoftwareInformation(asyncResp, sw_util::biosPurpose, "",
+                                          true);
++
++    // Populate Attributes (attribute name -> current value) from
++    // BaseBIOSTable. Upstream bmcweb dropped BaseBIOSTable handling, leaving
++    // /Bios without an Attributes field; on this board the host BIOS pushes the
++    // table in-band (asrock-ipmi-oem), so re-add a read-only view of it.
++    using BiosBaseTableItem = std::pair<
++        std::string,
++        std::tuple<std::string, bool, std::string, std::string, std::string,
++                   std::variant<int64_t, std::string>,
++                   std::variant<int64_t, std::string>,
++                   std::vector<std::tuple<std::string,
++                                          std::variant<int64_t, std::string>,
++                                          std::string>>>>;
++    using BiosBaseTable = std::vector<BiosBaseTableItem>;
++    dbus::utility::getProperty<BiosBaseTable>(
++        "xyz.openbmc_project.BIOSConfigManager",
++        "/xyz/openbmc_project/bios_config/manager",
++        "xyz.openbmc_project.BIOSConfig.Manager", "BaseBIOSTable",
++        // ast-grep-ignore: long-lambda
++        [asyncResp](const boost::system::error_code& ec,
++                    const BiosBaseTable& baseBiosTable) {
++            nlohmann::json& attributes =
++                asyncResp->res.jsonValue["Attributes"];
++            attributes = nlohmann::json::object();
++            if (ec)
++            {
++                BMCWEB_LOG_WARNING("Failed to read BaseBIOSTable: {}",
++                                   ec.message());
++                return;
++            }
++            for (const BiosBaseTableItem& item : baseBiosTable)
++            {
++                const std::variant<int64_t, std::string>& current =
++                    std::get<5>(item.second);
++                if (const int64_t* intVal = std::get_if<int64_t>(&current))
++                {
++                    attributes[item.first] = *intVal;
++                }
++                else if (const std::string* strVal =
++                             std::get_if<std::string>(&current))
++                {
++                    attributes[item.first] = *strVal;
++                }
++            }
++        });
+ }
+ 
+ inline void requestRoutesBiosService(App& app)
