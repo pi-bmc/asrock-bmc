@@ -30,15 +30,17 @@
 //     state machine, packed struct layouts, and CRC32 integrity are kept
 //     identical to Intel's — no oemcommands.hpp, no /var/oob.
 //
-// PAYLOAD FORMAT (confirmed by capture): the SetPayload StartTransfer header
-// carries payloadType 1 and a ~13.7 KB body, i.e. Intel-Aptio BIOS-config XML
-// (Intel server BIOS is AMI Aptio, so this board's AMI BIOS emits the same XML).
-// This handler runs the full chunked transfer + CRC32, persists the assembled
-// payload to /var/lib/asrock-bios-config/PayloadN, then parses it into the
-// BaseBIOSTable D-Bus property via biosxml.hpp (Intel's tinyxml2 Aptio parser:
-// bios::Xml -> doDepexCompute -> getBaseTable -> commit), exactly as
-// intel-ipmi-oem's ipmiOEMSetPayload does. A parse failure is logged but the
-// transfer is still ACKed so the BIOS handshake completes.
+// PAYLOAD FORMAT (confirmed by capture): payloadType 1, a ~13.7 KB body that is
+// **LZMA-compressed** (.lzma "alone" format, props 0x5D) Intel-Aptio BIOS-config
+// XML — ~184 KB of <SYSTEM><biosknobs><knob> once inflated (Intel server BIOS is
+// AMI Aptio, so this board's AMI BIOS emits the same schema). This handler runs
+// the full chunked transfer + CRC32, persists the raw payload to
+// /var/lib/asrock-bios-config/PayloadN, LZMA-decompresses it (liblzma) to
+// PayloadN.xml, then parses that into the BaseBIOSTable D-Bus property via
+// biosxml.hpp (Intel's tinyxml2 Aptio parser: bios::Xml -> doDepexCompute ->
+// getBaseTable -> commit), mirroring intel-ipmi-oem's ipmiOEMSetPayload. A
+// decode/parse failure is logged but the transfer is still ACKed so the BIOS
+// handshake completes.
 //
 // The kcsmonitor filter (same library) logs every inbound request over KCS.
 
@@ -57,6 +59,7 @@
 #include <sdbusplus/message.hpp>
 
 #include <boost/crc.hpp>
+#include <lzma.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -222,14 +225,85 @@ static bool commitBaseBIOSTable(const bios::BiosBaseTableType& table)
 }
 
 // ---------------------------------------------------------------------------
-// Parse an assembled Aptio BIOS-config XML file into BaseBIOSTable, mirroring
-// intel-ipmi-oem ipmiOEMSetPayload: construct bios::Xml(path), run the depex
-// compute, pull the base table, and commit it. tinyxml2 reads from a file, so
-// the caller passes the path the payload was persisted to. Returns true if the
+// Decompress a legacy LZMA "alone" (.lzma) stream. The AMI BIOS LZMA-compresses
+// the BIOS-config XML before pushing it (StartTransfer body begins with the
+// alone header: props byte 0x5D, 4-byte dict size, 8-byte streamed size). Uses
+// liblzma's alone decoder with a bounded memlimit and output cap. Returns true
+// and fills `out` with the decompressed bytes on success.
+// ---------------------------------------------------------------------------
+static bool lzmaAloneDecode(const std::vector<uint8_t>& in,
+                            std::vector<uint8_t>& out)
+{
+    lzma_stream strm = LZMA_STREAM_INIT;
+    // 128 MiB memlimit bounds the dictionary a (possibly corrupt) header asks
+    // for; the real dict here is 64 MiB.
+    if (lzma_alone_decoder(&strm, 128ULL * 1024 * 1024) != LZMA_OK)
+    {
+        return false;
+    }
+    strm.next_in = in.data();
+    strm.avail_in = in.size();
+
+    std::array<uint8_t, 64 * 1024> chunk;
+    lzma_ret ret;
+    do
+    {
+        strm.next_out = chunk.data();
+        strm.avail_out = chunk.size();
+        ret = lzma_code(&strm, LZMA_FINISH);
+        out.insert(out.end(), chunk.begin(),
+                   chunk.begin() + (chunk.size() - strm.avail_out));
+        if (ret != LZMA_OK && ret != LZMA_STREAM_END)
+        {
+            lzma_end(&strm);
+            return false;
+        }
+        if (out.size() > 16u * 1024 * 1024) // sane cap for BIOS Setup XML
+        {
+            lzma_end(&strm);
+            return false;
+        }
+    } while (ret != LZMA_STREAM_END);
+
+    lzma_end(&strm);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Turn a received SetPayload body into BaseBIOSTable, mirroring intel-ipmi-oem
+// ipmiOEMSetPayload. The AMI BIOS sends the Aptio XML LZMA-compressed, so we
+// decompress first (payloads that already start with '<' are treated as plain
+// XML), write the XML out for tinyxml2 (which reads a file path), then
+// bios::Xml -> doDepexCompute -> getBaseTable -> commit. Returns true if the
 // table was populated on D-Bus.
 // ---------------------------------------------------------------------------
-static bool processBiosXml(const std::string& xmlPath)
+static bool processBiosXml(const std::vector<uint8_t>& payload,
+                           const std::string& xmlPath)
 {
+    std::vector<uint8_t> xml;
+    if (!payload.empty() && payload[0] == '<')
+    {
+        xml = payload; // already plain XML
+    }
+    else if (!lzmaAloneDecode(payload, xml))
+    {
+        log<level::ERR>("biosconfig: SetPayload LZMA decompression failed");
+        return false;
+    }
+
+    // tinyxml2 (bios::Xml) loads from a file; persist the decompressed XML.
+    {
+        std::ofstream f(xmlPath, std::ios::binary | std::ios::trunc);
+        if (!f)
+        {
+            log<level::ERR>("biosconfig: cannot write decompressed XML",
+                            entry("PATH=%s", xmlPath.c_str()));
+            return false;
+        }
+        f.write(reinterpret_cast<const char*>(xml.data()),
+                static_cast<std::streamsize>(xml.size()));
+    }
+
     try
     {
         bios::Xml biosxml(xmlPath.c_str());
@@ -447,9 +521,11 @@ static ipmi::RspType<uint32_t> ipmiSetPayload(uint8_t stateByte,
             if (payloadType == static_cast<uint8_t>(PayloadType::xmlType0) ||
                 payloadType == static_cast<uint8_t>(PayloadType::xmlType1))
             {
+                // Raw (LZMA) bytes are at PayloadN (via recordPayload); write the
+                // decompressed XML alongside it as PayloadN.xml for tinyxml2.
                 std::string xmlPath = std::string(stateDir) + "/Payload" +
-                                      std::to_string(payloadType);
-                if (processBiosXml(xmlPath))
+                                      std::to_string(payloadType) + ".xml";
+                if (processBiosXml(buf, xmlPath))
                 {
                     log<level::INFO>(
                         "biosconfig: BaseBIOSTable updated from BIOS XML",

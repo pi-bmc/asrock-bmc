@@ -35,6 +35,7 @@ phosphor_logging_dep     = dependency('phosphor-logging')
 sdbusplus_dep            = dependency('sdbusplus')
 ipmid_dep                = dependency('libipmid')
 nlohmann_json_dep        = dependency('nlohmann_json')
+liblzma_dep              = dependency('liblzma')
 
 tinyxml_dep = dependency(
     'tinyxml2',
@@ -47,6 +48,7 @@ asrock_oem_deps = [
     phosphor_logging_dep,
     sdbusplus_dep,
     nlohmann_json_dep,
+    liblzma_dep,
     tinyxml_dep,
 ]
 

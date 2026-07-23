@@ -131,8 +131,11 @@ class Depex
 
         for (auto& knob : mKnobs)
         {
-            /* if 'depex' == "TRUE" no need to execute expression. */
-            if ("TRUE" == knob.depexStr)
+            /* If 'depex' == "TRUE", or the knob has no 'depex' attribute at
+             * all, it is unconditionally present (no dependency to evaluate).
+             * This board's AMI/Aptio export omits 'depex' on every knob, so
+             * without the empty() case getBaseTable() would drop them all. */
+            if (knob.depexStr.empty() || "TRUE" == knob.depexStr)
             {
                 knob.depex = true;
             }

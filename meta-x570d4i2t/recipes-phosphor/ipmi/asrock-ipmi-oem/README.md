@@ -54,25 +54,30 @@ JSON (Intel server BIOS is AMI Aptio; this board's AMI BIOS emits the same XML).
 The StartTransfer struct is Intel's exact packed layout
 `{u16 version, u32 totalSize, u32 totalChecksum, u8 flag}`.
 
-The handler runs the full chunked transfer + CRC32, persists the assembled
-payload to `/var/lib/asrock-bios-config/PayloadN`, then **parses it into the
-`BaseBIOSTable` D-Bus property** using `biosxml.hpp` — Intel's `tinyxml2`-based
-Aptio `<biosknobs>/<knob>` parser — exactly as intel-ipmi-oem's
-`ipmiOEMSetPayload` does:
+The `SetPayload` body is **LZMA-compressed** — the `.lzma` "alone" header
+(`5d 00 00 00 04 …`, props 0x5D, 64 MiB dict, streamed size) confirmed by
+capture. Inflated it is ~184 KB of Intel-Aptio XML. So the handler runs the full
+chunked transfer + CRC32, persists the raw bytes to
+`/var/lib/asrock-bios-config/PayloadN`, LZMA-decompresses (liblzma) to
+`PayloadN.xml`, then **parses that into `BaseBIOSTable`** using `biosxml.hpp` —
+Intel's `tinyxml2`-based Aptio `<biosknobs>/<knob>` parser — exactly as
+intel-ipmi-oem's `ipmiOEMSetPayload` does:
 
 ```
-bios::Xml biosxml(path);        // tinyxml2 loads the persisted XML file
-biosxml.doDepexCompute();        // evaluate each knob's depex expression
-biosxml.getBaseTable(table);     // -> bios::BiosBaseTableType (a{s(sbsssvva(svs))})
-commitBaseBIOSTable(table);      // Properties.Set BaseBIOSTable on the manager
+lzmaAloneDecode(payload) -> PayloadN.xml   // liblzma alone decoder
+bios::Xml biosxml(PayloadN.xml);           // tinyxml2 loads the XML
+biosxml.doDepexCompute();                  // evaluate each knob's depex expression
+biosxml.getBaseTable(table);               // -> bios::BiosBaseTableType (a{s(sbsssvva(svs))})
+commitBaseBIOSTable(table);                // Properties.Set BaseBIOSTable on the manager
 ```
 
-`biosxml.hpp` (added from intel-ipmi-oem) needs `tinyxml2` (recipe `DEPENDS +=
-libtinyxml2`) and an `ipmi::DbusVariant`, supplied by the local `types.hpp` shim
-(`variant<int64_t,string>`, matching the manager property). Every enumeration
-knob maps to an `AttributeType.Enumeration` with `BoundType.OneOf` options. A
-parse failure is logged but the transfer is still ACKed, so the BIOS handshake
-completes and the raw XML always remains on disk for inspection.
+Dependencies (all in the recipe `DEPENDS`): `libtinyxml2` (XML parse), `xz`
+(liblzma decompression). `biosxml.hpp` also needs an `ipmi::DbusVariant`,
+supplied by the local `types.hpp` shim (`variant<int64_t,string>`, matching the
+manager property). Every enumeration knob maps to an `AttributeType.Enumeration`
+with `BoundType.OneOf` options. A decode/parse failure is logged but the transfer
+is still ACKed, so the BIOS handshake completes and the raw payload always
+remains on disk for inspection.
 
 ## Historical / reference command groups (removed from the build)
 

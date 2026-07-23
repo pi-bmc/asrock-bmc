@@ -39,6 +39,7 @@ DEPENDS = " \
     phosphor-ipmi-host \
     phosphor-logging \
     sdbusplus \
+    xz \
     "
 
 inherit meson pkgconfig obmc-phosphor-ipmiprovider-symlink systemd
