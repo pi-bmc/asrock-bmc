@@ -1,0 +1,288 @@
+From: meta-x570d4i2t <openbmc@x570d4i2t>
+Subject: [PATCH] hwmon: add Supermicro PWS-505P-1H flat-register PSU driver
+Upstream-Status: Inappropriate [board-specific vendor register map]
+
+The Supermicro PWS-505P-1H PSU is not a PMBus device: every SMBus read
+returns a flat IPMI-FRU memory image indexed by command-code-as-offset
+(READ_VOUT/READ_IOUT share bytes, PMBUS_REVISION reads garbage, PEC NAKs,
+and the generic pmbus driver fails its capability probe). Live telemetry
+lives at fixed vendor offsets in that flat map:
+
+  0x09      temperature   degC, direct
+  0x0a/0x0b fan1/fan2     RPM = raw * 30 / 0.262 (0 = fan absent)
+  0x14      AC current    A = raw / 16
+  0xf4      AC voltage    V, direct
+  0xf5/0xf6 AC power      W, 16-bit little-endian
+
+Expose those as a standard hwmon device (temp1, fan1, fan2, in1 "vin",
+curr1 "iin", power1 "pin" - labels chosen to match pmbus conventions so
+dbus-sensors' psusensor consumes it via an entity-manager "pmbus" record).
+
+---
+ drivers/hwmon/Kconfig   |  10 ++++
+ drivers/hwmon/Makefile  |   1 +
+ drivers/hwmon/pws505p.c | 178 ++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 189 insertions(+)
+
+--- a/drivers/hwmon/Kconfig
++++ b/drivers/hwmon/Kconfig
+@@ -1893,6 +1893,16 @@
+ 	  This driver can also be built as a module. If so, the module
+ 	  will be called pwm-fan.
+
++config SENSORS_PWS505P
++	tristate "Supermicro PWS-505P-1H power supply"
++	depends on I2C
++	help
++	  If you say yes here you get support for the Supermicro
++	  PWS-505P-1H power supply's vendor telemetry registers
++	  (a flat IPMI-FRU style register map, not PMBus).
++
++	  This driver can also be built as a module called pws505p.
++
+ config SENSORS_QNAP_MCU_HWMON
+ 	tristate "QNAP MCU hardware monitoring"
+ 	depends on MFD_QNAP_MCU
+--- a/drivers/hwmon/Makefile
++++ b/drivers/hwmon/Makefile
+@@ -196,6 +196,7 @@
+ obj-$(CONFIG_SENSORS_POWR1220)  += powr1220.o
+ obj-$(CONFIG_SENSORS_PT5161L)	+= pt5161l.o
+ obj-$(CONFIG_SENSORS_PWM_FAN)	+= pwm-fan.o
++obj-$(CONFIG_SENSORS_PWS505P)	+= pws505p.o
+ obj-$(CONFIG_SENSORS_QNAP_MCU_HWMON)	+= qnap-mcu-hwmon.o
+ obj-$(CONFIG_SENSORS_RASPBERRYPI_HWMON)	+= raspberrypi-hwmon.o
+ obj-$(CONFIG_SENSORS_SA67MCU)	+= sa67mcu-hwmon.o
+--- /dev/null
++++ b/drivers/hwmon/pws505p.c
+@@ -0,0 +1,230 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++/*
++ * pws505p.c - Supermicro PWS-505P-1H power supply hwmon driver
++ *
++ * The PSU presents a flat IPMI-FRU style register map over SMBus (it is
++ * NOT PMBus - the generic pmbus driver fails its capability probe).
++ * Telemetry registers, validated on hardware against the stock BMC:
++ *
++ *   0x09      temperature  degC (direct;  0 or >=125 = invalid)
++ *   0x0a/0x0b fan1/fan2    RPM = raw * 30 / 0.262 (0 = fan absent)
++ *   0x0c      DC status    0x01 = DC good
++ *   0x14      AC current   A = raw / 16
++ *   0xf4      AC voltage   V (direct)
++ *   0xf5/0xf6 AC power     W (16-bit little-endian)
++ *
++ * in/curr/power channels carry pmbus-style labels (vin/iin/pin) so
++ * userspace stacks written for pmbus hwmon (e.g. OpenBMC dbus-sensors
++ * psusensor) consume this device unchanged.
++ */
++
++#include <linux/err.h>
++#include <linux/hwmon.h>
++#include <linux/i2c.h>
++#include <linux/math.h>
++#include <linux/module.h>
++#include <linux/mod_devicetable.h>
++#include <linux/sysfs.h>
++
++#define PWS505P_REG_TEMP	0x09
++#define PWS505P_REG_FAN1	0x0a
++#define PWS505P_REG_FAN2	0x0b
++#define PWS505P_REG_STATUS	0x0c
++#define PWS505P_REG_IIN		0x14
++#define PWS505P_REG_VIN		0xf4
++#define PWS505P_REG_PIN_L	0xf5
++#define PWS505P_REG_PIN_H	0xf6
++
++struct pws505p_data {
++	struct i2c_client *client;
++};
++
++static int pws505p_read(struct device *dev, enum hwmon_sensor_types type,
++			u32 attr, int channel, long *val)
++{
++	struct pws505p_data *data = dev_get_drvdata(dev);
++	struct i2c_client *client = data->client;
++	int v, hi;
++
++	switch (type) {
++	case hwmon_temp:
++		v = i2c_smbus_read_byte_data(client, PWS505P_REG_TEMP);
++		if (v < 0)
++			return v;
++		if (v == 0 || v >= 125)
++			return -ENODATA;
++		*val = v * 1000;
++		return 0;
++	case hwmon_fan:
++		v = i2c_smbus_read_byte_data(client, channel ?
++					     PWS505P_REG_FAN2 :
++					     PWS505P_REG_FAN1);
++		if (v < 0)
++			return v;
++		/* raw * 30 / 0.262; 0 means the fan is not fitted */
++		*val = DIV_ROUND_CLOSEST(v * 30000, 262);
++		return 0;
++	case hwmon_in:
++		v = i2c_smbus_read_byte_data(client, PWS505P_REG_VIN);
++		if (v < 0)
++			return v;
++		*val = v * 1000;
++		return 0;
++	case hwmon_curr:
++		v = i2c_smbus_read_byte_data(client, PWS505P_REG_IIN);
++		if (v < 0)
++			return v;
++		*val = DIV_ROUND_CLOSEST(v * 1000, 16);
++		return 0;
++	case hwmon_power:
++		v = i2c_smbus_read_byte_data(client, PWS505P_REG_PIN_L);
++		if (v < 0)
++			return v;
++		hi = i2c_smbus_read_byte_data(client, PWS505P_REG_PIN_H);
++		if (hi < 0)
++			return hi;
++		*val = ((long)hi << 8 | v) * 1000000L;
++		return 0;
++	default:
++		return -EOPNOTSUPP;
++	}
++}
++
++static int pws505p_read_string(struct device *dev,
++			       enum hwmon_sensor_types type, u32 attr,
++			       int channel, const char **str)
++{
++	switch (type) {
++	case hwmon_in:
++		*str = "vin";
++		return 0;
++	case hwmon_curr:
++		*str = "iin";
++		return 0;
++	case hwmon_power:
++		*str = "pin";
++		return 0;
++	default:
++		return -EOPNOTSUPP;
++	}
++}
++
++static umode_t pws505p_is_visible(const void *data,
++				  enum hwmon_sensor_types type, u32 attr,
++				  int channel)
++{
++	return 0444;
++}
++
++static const struct hwmon_channel_info * const pws505p_info[] = {
++	HWMON_CHANNEL_INFO(temp, HWMON_T_INPUT),
++	HWMON_CHANNEL_INFO(fan, HWMON_F_INPUT, HWMON_F_INPUT),
++	HWMON_CHANNEL_INFO(in, HWMON_I_INPUT | HWMON_I_LABEL),
++	HWMON_CHANNEL_INFO(curr, HWMON_C_INPUT | HWMON_C_LABEL),
++	HWMON_CHANNEL_INFO(power, HWMON_P_INPUT | HWMON_P_LABEL),
++	NULL
++};
++
++static const struct hwmon_ops pws505p_hwmon_ops = {
++	.is_visible = pws505p_is_visible,
++	.read = pws505p_read,
++	.read_string = pws505p_read_string,
++};
++
++static const struct hwmon_chip_info pws505p_chip_info = {
++	.ops = &pws505p_hwmon_ops,
++	.info = pws505p_info,
++};
++
++/*
++ * Expose the PSU's flat 256-byte register image as a read-only "eeprom"
++ * sysfs file. The device is a standard IPMI FRU image at heart, and
++ * entity-manager's fru-device scans /sys/bus/i2c/devices/<bus>-<addr>/eeprom
++ * files - restoring the FRU-parsed identity (manufacturer/model/serial)
++ * that a bound kernel client otherwise removes from fru-device's raw i2c
++ * bus scan.
++ */
++static ssize_t eeprom_read(struct file *filp, struct kobject *kobj,
++			   const struct bin_attribute *attr, char *buf,
++			   loff_t off, size_t count)
++{
++	struct i2c_client *client = to_i2c_client(kobj_to_dev(kobj));
++	size_t i;
++
++	for (i = 0; i < count; i++) {
++		int v = i2c_smbus_read_byte_data(client, off + i);
++
++		if (v < 0)
++			return i ? (ssize_t)i : v;
++		buf[i] = v;
++	}
++	return count;
++}
++static const BIN_ATTR_RO(eeprom, 256);
++
++static void pws505p_remove_eeprom(void *dev)
++{
++	device_remove_bin_file(dev, &bin_attr_eeprom);
++}
++
++static int pws505p_probe(struct i2c_client *client)
++{
++	struct device *dev = &client->dev;
++	struct pws505p_data *data;
++	struct device *hwmon_dev;
++	int status;
++	int ret;
++
++	status = i2c_smbus_read_byte_data(client, PWS505P_REG_STATUS);
++	if (status < 0)
++		return dev_err_probe(dev, status, "PSU not responding\n");
++
++	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
++	if (!data)
++		return -ENOMEM;
++	data->client = client;
++
++	ret = device_create_bin_file(dev, &bin_attr_eeprom);
++	if (ret)
++		return ret;
++	ret = devm_add_action_or_reset(dev, pws505p_remove_eeprom, dev);
++	if (ret)
++		return ret;
++
++	/*
++	 * Register the hwmon device under the name "pmbus": OpenBMC's
++	 * dbus-sensors psusensor whitelists hwmon devices by driver name,
++	 * and "pmbus" is the entry its entity-manager "pmbus" config type
++	 * maps to. The i2c driver itself keeps the pws505p name.
++	 */
++	hwmon_dev = devm_hwmon_device_register_with_info(dev, "pmbus", data,
++							 &pws505p_chip_info,
++							 NULL);
++	return PTR_ERR_OR_ZERO(hwmon_dev);
++}
++
++static const struct i2c_device_id pws505p_id[] = {
++	{ "pws505p" },
++	{ }
++};
++MODULE_DEVICE_TABLE(i2c, pws505p_id);
++
++static const struct of_device_id pws505p_of_match[] = {
++	{ .compatible = "supermicro,pws505p" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, pws505p_of_match);
++
++static struct i2c_driver pws505p_driver = {
++	.driver = {
++		.name = "pws505p",
++		.of_match_table = pws505p_of_match,
++	},
++	.probe = pws505p_probe,
++	.id_table = pws505p_id,
++};
++module_i2c_driver(pws505p_driver);
++
++MODULE_AUTHOR("meta-x570d4i2t");
++MODULE_DESCRIPTION("Supermicro PWS-505P-1H PSU hwmon driver");
++MODULE_LICENSE("GPL");

@@ -3,6 +3,7 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 SRC_URI:append = " \
     file://x570d4i2t.cfg \
     file://0001-append-x570d4i25-dtb-to-dts-makefile.patch \
+    file://0002-hwmon-add-supermicro-pws505p-driver.patch \
     file://aspeed-bmc-asrock-x570d4i2t.dts \
 "
 

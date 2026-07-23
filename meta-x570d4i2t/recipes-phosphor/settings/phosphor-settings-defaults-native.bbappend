@@ -6,6 +6,6 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 # SysACPIStatus/DevACPIStatus on, instead of failing with "No Object has
 # implemented the interface". Declarative + persistent; no source patch needed.
 SRC_URI:append = " \
-    file://x570d4i2t-host-acpi-power-state.yaml \
+    file://host-acpi-power-state.yaml \
 "
-SETTINGS_HOST_TEMPLATES:append = " x570d4i2t-host-acpi-power-state.yaml"
+SETTINGS_HOST_TEMPLATES:append = " host-acpi-power-state.yaml"

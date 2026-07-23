@@ -43,16 +43,15 @@ SUMMARY:${PN}-flash = "ASRock Flash"
 RDEPENDS:${PN}-flash = " \
         phosphor-ipmi-flash \
         phosphor-ipmi-blobs \
+        phosphor-software-manager-bios-software-update \
         "
 
 SUMMARY:${PN}-system = "ASRock System"
 RDEPENDS:${PN}-system = " \
         entity-manager \
         phosphor-software-manager \
-        phosphor-virtual-sensor \
         x570d4i2t-vga-enable \
         aspeed-video-watchdog \
-        supermicro-psu-monitor \
         smbios-mdr \
         phosphor-ipmi-blobs \
         biosconfig-manager \

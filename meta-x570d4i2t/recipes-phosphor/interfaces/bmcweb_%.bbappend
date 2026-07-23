@@ -1,8 +1,9 @@
 # bmcweb tuning for the X570D4I-2T. No OEM Redfish Host Interface routes are
 # added on this board: the in-band USB-NIC / Redfish Host Interface approach was
-# removed entirely. SMBIOS arrives over IPMI (AMI-MDR, handled in
-# asrock-ipmi-oem); BIOS configuration is served by the stock bmcweb /Bios
-# routes backed by xyz.openbmc_project.BIOSConfigManager (no host-push path).
+# removed entirely. SMBIOS arrives over KCS via the standard smbios-ipmi-blob
+# handler (see recipes-phosphor/smbios/smbios-mdr_%.bbappend); BIOS
+# configuration is served by the stock bmcweb /Bios routes backed by
+# xyz.openbmc_project.BIOSConfigManager (no host-push path).
 
 # Disable bmcweb's zstd HTTP compression.
 #
@@ -26,3 +27,10 @@ PACKAGECONFIG:remove = "http-zstd"
 # Bump to the upstream meson-options max (512 MB) so the firmware push
 # endpoint accepts the full image without a 30 MB silent truncation.
 EXTRA_OEMESON:append = " -Dhttp-body-limit=512"
+
+# Serve the host as /redfish/v1/Systems/1 (instead of the OpenBMC default
+# /redfish/v1/Systems/system), matching the common vendor convention
+# (iDRAC/iLO/MegaRAC use Systems/1). Safe for our webui-vue fork: it only
+# hardcodes the collection URL and follows member @odata.ids from there.
+# External scripts must rediscover via the Systems collection.
+EXTRA_OEMESON:append = " -Dredfish-system-uri-name=1"
