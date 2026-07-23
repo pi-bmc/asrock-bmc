@@ -34,25 +34,34 @@ add_project_arguments(
 phosphor_logging_dep     = dependency('phosphor-logging')
 sdbusplus_dep            = dependency('sdbusplus')
 ipmid_dep                = dependency('libipmid')
+nlohmann_json_dep        = dependency('nlohmann_json')
 
 asrock_oem_deps = [
     ipmid_dep,
     phosphor_logging_dep,
     sdbusplus_dep,
+    nlohmann_json_dep,
 ]
 
 # -----------------------------------------------------------------------
 # Shared library – loaded by phosphor-ipmi-host at runtime
 # -----------------------------------------------------------------------
 
-# Reduced to the IPMI request logger only. All custom OEM command/SMBIOS-synth
-# handlers were removed: SMBIOS now flows host -> BMC via the standard
-# smbios-ipmi-blob (/smbios) receiver (see smbios-mdr_%.bbappend) fed by our
-# injected SmbiosBmcPushDxe; standard phosphor providers handle the rest.
-# kcsmonitor is a pass-through filter that logs every inbound IPMI request
-# (incl. unhandled ones) — kept as a blank-screen / POST sanity check.
+# Two components:
+#   * kcsmonitor.cpp   — pass-through filter that logs every inbound IPMI
+#     request (incl. unhandled ones); a blank-screen / POST sanity check.
+#   * biosconfigcommands.cpp — the OpenBMC "BIOS OOB config" IPMI command set
+#     (NetFn 0x30, cmd 0xD3-0xD8 — the Intel path the AMI BIOS actually drives):
+#     the host pushes its attribute registry as JSON over KCS and the BMC
+#     populates xyz.openbmc_project.BIOSConfig.Manager (BaseBIOSTable), backing
+#     the stock bmcweb /redfish/v1/Systems/system/Bios endpoints.
+#
+# SMBIOS still flows host -> BMC via the standard smbios-ipmi-blob (/smbios)
+# receiver (see smbios-mdr_%.bbappend) fed by the injected SmbiosBmcPushDxe;
+# standard phosphor providers handle everything else.
 asrockoemcmds_src = [
     'src/kcsmonitor.cpp',
+    'src/biosconfigcommands.cpp',
 ]
 
 library(

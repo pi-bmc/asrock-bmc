@@ -5,11 +5,13 @@
 #   /redfish/v1/Systems/system/Bios
 #   /redfish/v1/Systems/system/Bios/Settings
 #
-# NOTE: there is currently no host-push path populating this store. The AMI
-# host BIOS's in-band BIOS-config push used the USB Redfish Host Interface,
-# which was removed from this layer; the IPMI BIOS-OOB path was likewise never
-# used by this firmware. The manager is kept so the standard Redfish /Bios
-# endpoints exist (empty until a populator is added).
+# HOST-PUSH PATH: this store is populated in-band over KCS by the BIOS OOB
+# config IPMI commands in asrock-ipmi-oem (biosconfigcommands.cpp, NetFn 0x30
+# cmd 0xD3-0xD8 — the Intel path the AMI BIOS actually drives). The host pushes its
+# attribute registry as JSON via SetPayload and the BMC writes BaseBIOSTable
+# here. This replaces the AMI USB Redfish Host Interface config push, which was
+# removed from this layer. (The seedData file below is also written by that
+# provider's Set/GetBIOSPwdHash handlers.)
 #
 # No board-specific overrides are needed; inheriting the recipe as-is
 # is sufficient.

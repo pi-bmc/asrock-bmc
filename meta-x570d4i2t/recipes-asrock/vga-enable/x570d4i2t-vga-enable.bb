@@ -9,27 +9,36 @@ LICENSE = "Apache-2.0"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/Apache-2.0;md5=89aea4e17d99a7cacdbeed46a0096b10"
 
 SRC_URI = "file://x570d4i2t-vga-enable.sh \
-           file://x570d4i2t-vga-enable.service"
+           file://x570d4i2t-vga-enable.service \
+           file://x570d4i2t-vga-enable-monitor.sh \
+           file://x570d4i2t-vga-enable-monitor.service"
 
 S = "${UNPACKDIR}"
 
 inherit systemd
 
 SYSTEMD_PACKAGES = "${PN}"
-SYSTEMD_SERVICE:${PN} = "x570d4i2t-vga-enable.service"
+SYSTEMD_SERVICE:${PN} = "x570d4i2t-vga-enable.service \
+                         x570d4i2t-vga-enable-monitor.service"
 
 do_install() {
     install -d ${D}${libexecdir}
     install -m 0755 ${UNPACKDIR}/x570d4i2t-vga-enable.sh \
         ${D}${libexecdir}/x570d4i2t-vga-enable.sh
+    install -m 0755 ${UNPACKDIR}/x570d4i2t-vga-enable-monitor.sh \
+        ${D}${libexecdir}/x570d4i2t-vga-enable-monitor.sh
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/x570d4i2t-vga-enable.service \
         ${D}${systemd_system_unitdir}/x570d4i2t-vga-enable.service
+    install -m 0644 ${UNPACKDIR}/x570d4i2t-vga-enable-monitor.service \
+        ${D}${systemd_system_unitdir}/x570d4i2t-vga-enable-monitor.service
 }
 
 FILES:${PN} += "${libexecdir}/x570d4i2t-vga-enable.sh \
-                ${systemd_system_unitdir}/x570d4i2t-vga-enable.service"
+                ${libexecdir}/x570d4i2t-vga-enable-monitor.sh \
+                ${systemd_system_unitdir}/x570d4i2t-vga-enable.service \
+                ${systemd_system_unitdir}/x570d4i2t-vga-enable-monitor.service"
 
 # devmem + mknod are provided by busybox (always in the image)
 RDEPENDS:${PN} += "busybox"

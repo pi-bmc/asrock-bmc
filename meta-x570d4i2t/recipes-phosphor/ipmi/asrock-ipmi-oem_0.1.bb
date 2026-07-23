@@ -1,15 +1,21 @@
-SUMMARY = "ASRock X570D4I-2T IPMI request logger"
+SUMMARY = "ASRock X570D4I-2T IPMI OEM provider (request logger + BIOS config)"
 DESCRIPTION = "\
-A minimal phosphor-ipmi-host provider for the X570D4I-2T that registers a \
-pass-through IPMI request *filter* (kcsmonitor): it logs every inbound IPMI \
-message — including unhandled NetFn/Cmd pairs the host BIOS sends over KCS — to \
-the journal, tagged with the channel, as a POST / blank-screen sanity check. \
+A phosphor-ipmi-host provider for the X570D4I-2T with two components: \
 \
-All prior custom OEM command and SMBIOS-synthesis handlers (and the abandoned \
-Redfish-Host-Interface code) were removed.  The host now pushes its full SMBIOS \
-table to the BMC over KCS via the STANDARD smbios-ipmi-blob (\"/smbios\") receiver \
-(see smbios-mdr_%.bbappend), driven by the injected SmbiosBmcPushDxe \
-(recipes-bsp/host-bios-image); standard phosphor providers serve everything else. \
+1. kcsmonitor — a pass-through IPMI request *filter* that logs every inbound \
+message, including unhandled NetFn/Cmd pairs the host BIOS sends over KCS, as a \
+POST / blank-screen sanity check. \
+\
+2. biosconfigcommands — the OpenBMC \"BIOS OOB config\" IPMI command set (NetFn \
+0x30, cmd 0xD3-0xD8 — the Intel path the AMI BIOS actually drives): the host \
+pushes its BIOS attribute registry as JSON over KCS and the BMC populates \
+xyz.openbmc_project.BIOSConfig.Manager (BaseBIOSTable), backing the stock bmcweb \
+/redfish/v1/Systems/system/Bios endpoints. It is the in-band replacement for the \
+removed USB Redfish Host Interface config path. \
+\
+SMBIOS still flows host -> BMC over KCS via the STANDARD smbios-ipmi-blob \
+(\"/smbios\") receiver (see smbios-mdr_%.bbappend), driven by the injected \
+SmbiosBmcPushDxe; standard phosphor providers serve everything else. \
 "
 
 LICENSE = "Apache-2.0"
@@ -19,11 +25,14 @@ SRC_URI = " \
     file://meson.build \
     file://meson.options \
     file://src/kcsmonitor.cpp \
+    file://src/biosconfigcommands.cpp \
+    file://src/biosconfigcommands.hpp \
     "
 
 S = "${UNPACKDIR}"
 DEPENDS = " \
     boost \
+    nlohmann-json \
     phosphor-ipmi-host \
     phosphor-logging \
     sdbusplus \

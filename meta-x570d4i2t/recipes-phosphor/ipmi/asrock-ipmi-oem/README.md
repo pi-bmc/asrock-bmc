@@ -1,10 +1,77 @@
 # asrock-ipmi-oem — ASRock/AMI OEM IPMI provider (X570D4I-2T)
 
-A `phosphor-host-ipmid` provider library (`libzasrockoemcmds.so`) that reproduces
-the stock AMI MegaRAC OEM IPMI command set the host BIOS uses during POST, plus the
-**Redfish Host Interface (RHI) credential-bootstrap commands** that gate usb0 RHI.
+A `phosphor-host-ipmid` provider library (`libzasrockoemcmds.so`). The library
+as built today ships two things (see `meson.build`):
 
-## Command groups implemented
+* **`kcsmonitor.cpp`** — a pass-through request filter that logs every inbound
+  IPMI message (see below).
+* **`biosconfigcommands.cpp`** — the OpenBMC **BIOS OOB config** command set,
+  adapted from `intel-ipmi-oem` for AMI firmware (see next section).
+
+> The historical command tables (`oemcommands.cpp`, `amicommands.cpp`,
+> `redfishhostiface.cpp`, `smbiosbuilder.cpp`, …) documented further below were
+> **removed** from the meson build; the sections are kept as a reverse-engineering
+> reference. SMBIOS now flows over the standard smbios-ipmi-blob receiver.
+
+## BIOS OOB config (`biosconfigcommands.cpp`) — the host-push path
+
+Adapted from [`intel-ipmi-oem/src/biosconfigcommands.cpp`](https://github.com/openbmc/intel-ipmi-oem/blob/master/src/biosconfigcommands.cpp).
+Lets the AMI host BIOS push its attribute registry to the BMC in-band over KCS so
+the stock bmcweb `/redfish/v1/Systems/system/Bios[/Settings]` endpoints populate.
+This replaces the removed USB Redfish Host Interface config push.
+
+| NetFn | Cmd | Name | Priv | Purpose |
+|---|---|---|---|---|
+| 0x30 | 0xD3 | SetBIOSCapabilities | Admin | store OOB capability byte |
+| 0x30 | 0xD4 | GetBIOSCapabilities | User | read it back |
+| 0x30 | 0xD5 | SetPayload | Admin | chunked host→BMC transfer (Start/InProgress/End/Abort), CRC32 |
+| 0x30 | 0xD6 | GetPayload | User | Info / Data / Status readback (incl. PendingAttributes) |
+| 0x30 | 0xD7 | SetBIOSPwdHashInfo | Admin | store admin password hash + seed → `bios-settings-manager/seedData` |
+| 0x30 | 0xD8 | GetBIOSPwdHash | User | return seed + stored hash |
+
+**Key adaptation vs. Intel:** Intel ships proprietary BIOS Setup *XML* (parsed by
+`biosxml.hpp` + a spawned converter). That is removed. The `SetPayload` transport
+here carries a **JSON** document (PayloadType 0) deserialised straight into the
+`xyz.openbmc_project.BIOSConfig.Manager` `BaseBIOSTable` property — no vendor
+translation, no `oemcommands.hpp`, no `/var/oob`. The commands stay on Intel's
+**NetFn 0x30** path (cmds 0xD3–0xD8): a live KCS capture confirms the stock AMI
+BIOS drives exactly this protocol — it sends `SetBIOSCap` (0xD3) on NetFn 0x30
+during POST — so the handlers must match Intel's numbers. The chunked
+transfer/CRC protocol is unchanged. All tunables (NetFn/cmd, D-Bus names, paths)
+are at the top of `biosconfigcommands.hpp`.
+
+### Payload format — Aptio XML (confirmed by capture)
+
+A live `SetPayload` StartTransfer from the BIOS decodes as:
+
+```
+cmd=0xD5 data=[00 01 | 01 00 | 97 35 00 00 | CC CF BC 66 | 00]
+             state=Start type=1  ver=1  size=0x3597(13719) crc32=0x66BCCFCC flag=0
+```
+
+So the body is **payloadType 1, ~13.7 KB** — Intel-Aptio **BIOS-config XML**, not
+JSON (Intel server BIOS is AMI Aptio; this board's AMI BIOS emits the same XML).
+The StartTransfer struct is Intel's exact packed layout
+`{u16 version, u32 totalSize, u32 totalChecksum, u8 flag}`.
+
+The handler runs the full chunked transfer + CRC32 and persists the assembled
+payload to `/var/lib/asrock-bios-config/PayloadN`. **Turning that XML into the
+`BaseBIOSTable` D-Bus property is the remaining work** and needs the concrete
+Aptio schema:
+
+1. Boot the host, then `cat /var/lib/asrock-bios-config/Payload1` to grab the XML.
+2. Add an `XML → BiosBaseTable` parser in `biosconfigcommands.cpp` — it can reuse
+   the D-Bus property-`Set` block in the (currently `[[maybe_unused]]`)
+   `setBaseBIOSTable()` helper, which already builds the exact
+   `a{s(sbsssvva(svs))}` structure the manager expects.
+
+Transfers are ACKed as successful in the meantime so the BIOS handshake completes
+and the bytes always land on disk. The `setBaseBIOSTable()` JSON helper documents
+the target D-Bus shape: `attributeType` ∈ {Enumeration, String, Password, Integer,
+Boolean}; `boundType` ∈ {OneOf, LowerBound, UpperBound, ScalarIncrement,
+MinStringLength, MaxStringLength}.
+
+## Historical / reference command groups (removed from the build)
 
 | File | NetFn | What |
 |---|---|---|

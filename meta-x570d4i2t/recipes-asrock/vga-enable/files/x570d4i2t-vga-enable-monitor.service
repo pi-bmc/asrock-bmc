@@ -1,0 +1,17 @@
+[Unit]
+Description=Re-assert AST2500 host VGA (VGA_EN) on host power-on
+Documentation=man:x570d4i2t-vga-enable
+# Complements the BMC-boot oneshot (x570d4i2t-vga-enable.service): that runs
+# once before host power, this covers host cold-cycle power-on events that can
+# clear VGA_EN (e.g. Redfish BootSourceOverrideTarget=BiosSetup + cold cycle).
+After=dbus.service x570d4i2t-vga-enable.service
+Wants=dbus.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+ExecStart=/usr/libexec/x570d4i2t-vga-enable-monitor.sh
+
+[Install]
+WantedBy=multi-user.target
