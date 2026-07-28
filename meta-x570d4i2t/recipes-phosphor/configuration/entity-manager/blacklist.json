@@ -1,3 +1,13 @@
 {
-    "buses": [9, 10, 11]
+    "buses": [
+        { "bus": 0,  "addresses": ["0x70"] },
+        { "bus": 1,  "addresses": ["0x2d", "0x4c"] },
+        { "bus": 2,  "addresses": ["0x3c"] },
+        { "bus": 4,  "addresses": ["0x4e", "0x4f"] },
+        { "bus": 6,  "addresses": ["0x60"] },
+        { "bus": 40, "addresses": ["0x70"] },
+        { "bus": 41, "addresses": ["0x70"] },
+        { "bus": 42, "addresses": ["0x70"] },
+        { "bus": 43, "addresses": ["0x70"] }
+    ]
 }

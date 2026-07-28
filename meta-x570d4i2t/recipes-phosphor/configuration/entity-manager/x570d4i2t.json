@@ -479,6 +479,7 @@
                 "Address": "0x4F",
                 "Bus": 4,
                 "Name": "Aux Temp",
+                "PowerState": "On",
                 "Thresholds": [
                     {
                         "Direction": "greater than",
@@ -494,27 +495,6 @@
                     }
                 ],
                 "Type": "TMP75"
-            },
-            {
-                "Address": "0x6a",
-                "Bus": 41,
-                "Name": "NVMe M2 1",
-                "PowerState": "On",
-                "Thresholds": [
-                    {
-                        "Direction": "greater than",
-                        "Name": "upper non critical",
-                        "Severity": 0,
-                        "Value": 60
-                    },
-                    {
-                        "Direction": "greater than",
-                        "Name": "upper critical",
-                        "Severity": 1,
-                        "Value": 70
-                    }
-                ],
-                "Type": "NVME1000"
             },
             {
                 "Connector": {

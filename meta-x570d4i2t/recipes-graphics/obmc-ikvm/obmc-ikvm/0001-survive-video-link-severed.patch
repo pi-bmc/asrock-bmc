@@ -1,0 +1,61 @@
+From: x570d4i2t layer <root@x570d4i2t>
+Date: Thu, 24 Jul 2026 00:00:00 +0000
+Subject: [PATCH] ikvm_manager: survive a severed/lost video link
+
+The host's aspeed-video signal on this board flaps (the BIOS drives an
+unstable 800x600 output that periodically drops). When the V4L2 timings
+query fails, Video::needsResize()/restart()/resize() throw an elog<>
+exception. Upstream's Manager::run() wraps video.start() in try/catch but
+NOT needsResize()/resize(), so the exception escapes run(), terminates the
+process, and systemd restarts obmc-ikvm -- tearing down the client's KVM
+session on every transient sever.
+
+Wrap needsResize()/resize() in try/catch so the daemon survives a lost
+signal and keeps serving (a stale/no-signal frame) until the signal
+returns, keeping the KVM session connected. The sync handshake is kept
+balanced: on a needsResize() failure we fall through to the no-resize
+branch (setVideoDone(); waitServer()); on a resize() failure we still
+setVideoDone() to release the paused server thread.
+--- a/ikvm_manager.cpp
++++ b/ikvm_manager.cpp
+@@ -40,11 +40,37 @@
+             video.stop();
+         }
+ 
+-        if (video.needsResize())
++        bool resizeNeeded = false;
++        try
++        {
++            resizeNeeded = video.needsResize();
++        }
++        catch (const std::exception& e)
++        {
++            // A lost/severed video signal (e.g. host powered off, or the
++            // aspeed-video link flapping while the BIOS re-inits the display)
++            // makes the V4L2 timings query fail. Upstream lets that exception
++            // escape run(), which terminates the process; systemd then
++            // restarts obmc-ikvm and the client's KVM session is torn down.
++            // Swallow it and treat it as "no resize" so the daemon survives
++            // and keeps serving (a stale/no-signal frame) until the signal
++            // returns.
++            lg2::error("Video needsResize failed {ERROR}", "ERROR", e.what());
++            resizeNeeded = false;
++        }
++
++        if (resizeNeeded)
+         {
+             waitServer(true);
+-            video.resize();
+-            server.resize();
++            try
++            {
++                video.resize();
++                server.resize();
++            }
++            catch (const std::exception& e)
++            {
++                lg2::error("Video resize failed {ERROR}", "ERROR", e.what());
++            }
+             setVideoDone();
+         }
+         else

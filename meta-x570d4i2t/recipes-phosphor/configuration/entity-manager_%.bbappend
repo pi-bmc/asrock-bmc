@@ -20,6 +20,24 @@ do_install:append() {
     install -m 0644 ${UNPACKDIR}/supermicro-pws-505p-1h.json \
         ${D}${datadir}/entity-manager/configurations/supermicro-pws-505p-1h.json
     # blacklist.json is read by FruDevice from the parent entity-manager dir.
+    # It scans 0x03-0x77 on every bus and logs each address that either answers
+    # without a valid FRU header ("failed to read bus N address M") or is held
+    # by a bound driver ("device at bus N address M busy"). None of those are
+    # faults, but they repeat on every rescan, so the known-not-a-FRU addresses
+    # are blocked per-bus (the parser accepts either a bare bus number or a
+    # {"bus", "addresses"} object; JSON comments are NOT accepted, hence this
+    # note living here):
+    #   0/40-43 0x70  PCA9545 mux, mirrored onto its own channel buses
+    #   1 0x2d/0x4c   NCT6779 + W83773G, instantiated by entity-manager
+    #   2 0x3c        AMD SB-RMI (APML), answers 0x20 but NAKs everything else
+    #   4 0x4e/0x4f   NCT75 aux temp, instantiated by entity-manager
+    #   6 0x60        unidentified responder on the host-shared SMBus
+    # 2/0x38 is deliberately NOT blocked: that is the PWS-505P-1H FRU that the
+    # supermicro-pws-505p-1h.json probe matches on. Bus 7 needs no entries --
+    # the SPD/FRU EEPROMs there are kernel-bound, and FruDevice's
+    # findI2CEeproms() reads those over sysfs and skips them automatically.
+    # (The previous "buses": [9, 10, 11] was inert: the DTS declares no
+    # &i2c9/&i2c10/&i2c11, so those adapters never exist.)
     install -m 0644 ${UNPACKDIR}/blacklist.json \
         ${D}${datadir}/entity-manager/blacklist.json
 }

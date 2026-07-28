@@ -114,6 +114,11 @@ static bool g_capabilityInit = false;
 static std::array<PayloadMeta, maxPayloadTypes> g_meta{};
 static std::array<std::vector<uint8_t>, maxPayloadTypes> g_payload{};
 static Session g_session{};
+// CRC32, per payload type, of the last payload that was both parsed and
+// committed to BaseBIOSTable. Persisted next to the capability byte so the
+// identical document this BIOS re-pushes on every POST can be short-circuited.
+// 0 means "nothing committed yet".
+static std::array<uint32_t, maxPayloadTypes> g_committedChecksum{};
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -177,10 +182,19 @@ static void loadCapability()
         Json j;
         f >> j;
         g_capability = j.value("capability", 0);
+        auto it = j.find("committedChecksum");
+        if (it != j.end() && it->is_array())
+        {
+            for (size_t i = 0; i < g_committedChecksum.size() && i < it->size();
+                 ++i)
+            {
+                g_committedChecksum[i] = (*it)[i].get<uint32_t>();
+            }
+        }
     }
     catch (const std::exception&)
     {
-        // fall back to default 0
+        // fall back to defaults
     }
 }
 
@@ -189,6 +203,7 @@ static void storeCapability()
     ensureStateDir();
     Json j;
     j["capability"] = g_capability;
+    j["committedChecksum"] = g_committedChecksum;
     std::ofstream f(std::string(stateDir) + "/nvdata.json", std::ios::trunc);
     if (f)
     {
@@ -222,6 +237,31 @@ static bool commitBaseBIOSTable(const bios::BiosBaseTableType& table)
     log<level::INFO>("biosconfig: BaseBIOSTable populated from BIOS XML",
                      entry("COUNT=%zu", table.size()));
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// Attribute count currently published in BaseBIOSTable, or nullopt if it could
+// not be read. Used only to decide whether an unchanged payload may be skipped;
+// callers treat "unknown" as "re-publish", so a transient D-Bus failure costs a
+// redundant parse instead of leaving Redfish with an empty table.
+// ---------------------------------------------------------------------------
+static std::optional<size_t> baseBiosTableSize()
+{
+    try
+    {
+        auto bus = ::getSdBus();
+        auto m = bus->new_method_call(biosMgrService, biosMgrPath,
+                                      "org.freedesktop.DBus.Properties", "Get");
+        m.append(std::string(biosMgrIface), std::string("BaseBIOSTable"));
+        auto reply = bus->call(m);
+        std::variant<bios::BiosBaseTableType> v;
+        reply.read(v);
+        return std::get<bios::BiosBaseTableType>(v).size();
+    }
+    catch (const std::exception&)
+    {
+        return std::nullopt;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +358,22 @@ static bool processBiosXml(const std::vector<uint8_t>& payload,
             log<level::ERR>("biosconfig: getBaseTable produced no attributes");
             return false;
         }
+
+        // Force every attribute read-only. bios::Xml hands back readOnly=false,
+        // which advertises these as live, settable values; on this board they
+        // are neither. The document the BIOS pushes is its *defaults* template:
+        // every knob's CurrentVal equals its own default, the payload is
+        // byte-identical on every POST, and two knobs that share one Setup byte
+        // (CSM009/SLOTOPROM022 at 0x01BA) report different "current" values --
+        // impossible for a live read. The real values live in the Setup NVRAM
+        // variable in the BIOS flash. There is also no write-back path: this
+        // firmware never issues GetPayload, so nothing a client writes here can
+        // reach the BIOS. Marking them read-only keeps Redfish from presenting
+        // editable knobs that would silently do nothing.
+        for (auto& attribute : table)
+        {
+            std::get<1>(attribute.second) = true;
+        }
         return commitBaseBIOSTable(table);
     }
     catch (const std::exception& e)
@@ -379,6 +435,10 @@ static ipmi::RspType<> ipmiSetBIOSCap(uint8_t capability, uint8_t reserved1,
     {
         return ipmi::responseInvalidFieldRequest();
     }
+    // Load before storing: the BIOS issues SetBIOSCap on every POST, ahead of
+    // the SetPayload transfer. Without this, the store below would write back a
+    // zeroed committedChecksum array and defeat the unchanged-payload skip.
+    loadCapability();
     g_capability = capability;
     g_capabilityInit = true;
     storeCapability();
@@ -521,12 +581,39 @@ static ipmi::RspType<uint32_t> ipmiSetPayload(uint8_t stateByte,
             if (payloadType == static_cast<uint8_t>(PayloadType::xmlType0) ||
                 payloadType == static_cast<uint8_t>(PayloadType::xmlType1))
             {
+                // This BIOS re-pushes a byte-identical document on every POST,
+                // so re-parsing it costs an LZMA inflate, a ~180 KB tinyxml2
+                // parse and a full BaseBIOSTable write that change nothing.
+                // Skip all of that when the payload matches what we last
+                // committed and the table is still published. Note this only
+                // saves BMC work: the BIOS ignores completion codes (it sends
+                // cmd 0x26, gets 0xC1, and transfers anyway), so the KCS chunks
+                // still have to be received and ACKed either way.
+                loadCapability();
+                std::optional<size_t> published;
+                if (whole == g_committedChecksum[payloadType])
+                {
+                    published = baseBiosTableSize();
+                }
+
+                if (published.value_or(0) > 0)
+                {
+                    log<level::INFO>(
+                        "biosconfig: payload unchanged, keeping BaseBIOSTable",
+                        entry("TYPE=%u", static_cast<unsigned>(payloadType)),
+                        entry("CRC=0x%08X", whole),
+                        entry("COUNT=%zu", *published));
+                }
                 // Raw (LZMA) bytes are at PayloadN (via recordPayload); write the
                 // decompressed XML alongside it as PayloadN.xml for tinyxml2.
-                std::string xmlPath = std::string(stateDir) + "/Payload" +
-                                      std::to_string(payloadType) + ".xml";
-                if (processBiosXml(buf, xmlPath))
+                else if (std::string xmlPath = std::string(stateDir) +
+                                               "/Payload" +
+                                               std::to_string(payloadType) +
+                                               ".xml";
+                         processBiosXml(buf, xmlPath))
                 {
+                    g_committedChecksum[payloadType] = whole;
+                    storeCapability();
                     log<level::INFO>(
                         "biosconfig: BaseBIOSTable updated from BIOS XML",
                         entry("TYPE=%u", static_cast<unsigned>(payloadType)),

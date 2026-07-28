@@ -1,0 +1,51 @@
+From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001
+From: ASRock Rack <noreply@asrock.com>
+Date: Thu, 23 Jul 2026 00:00:00 +0000
+Subject: [PATCH] power_control: don't error-log an absent BeepCode provider
+
+beep() calls xyz.openbmc_project.BeepCode on every power-fail event, but that
+interface has no implementation anywhere in the OpenBMC tree -- it is expected
+to come from a platform-specific daemon. On a board without one the call always
+fails with org.freedesktop.DBus.Error.ServiceUnknown, which sd-bus maps to
+EHOSTUNREACH, so every power-off logs
+
+    power-control: beep returned error with async_method_call
+                   (ec = No route to host)
+
+That is a missing optional feature, not a fault. Demote just that errno to
+debug and leave the error path intact for genuine call failures.
+
+Upstream-Status: Pending
+--- a/src/power_control.cpp
++++ b/src/power_control.cpp
+@@ -23,6 +23,7 @@
+ #include <boost/asio/steady_timer.hpp>
+ #include <boost/container/flat_map.hpp>
+ #include <boost/container/flat_set.hpp>
++#include <boost/system/errc.hpp>
+ #include <gpiod.hpp>
+ #include <nlohmann/json.hpp>
+ #include <phosphor-logging/lg2.hpp>
+@@ -220,6 +221,20 @@
+         [](boost::system::error_code ec) {
+             if (ec)
+             {
++                // xyz.openbmc_project.BeepCode is an optional, platform-
++                // specific provider; no such daemon exists in the OpenBMC
++                // tree, so on a board without one every power-fail beep
++                // resolves to org.freedesktop.DBus.Error.ServiceUnknown,
++                // which sd-bus maps to EHOSTUNREACH ("No route to host").
++                // That is a missing feature, not a fault -- log it at debug
++                // and keep the error path for real call failures.
++                if (ec == boost::system::errc::host_unreachable)
++                {
++                    lg2::debug(
++                        "beep skipped: no BeepCode provider on this platform (ec = {ERROR_MSG})",
++                        "ERROR_MSG", ec.message());
++                    return;
++                }
+                 lg2::error(
+                     "beep returned error with async_method_call (ec = {ERROR_MSG})",
+                     "ERROR_MSG", ec.message());
+-- 
+2.43.0

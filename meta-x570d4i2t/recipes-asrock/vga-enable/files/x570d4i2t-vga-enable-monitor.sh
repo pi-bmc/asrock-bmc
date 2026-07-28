@@ -54,9 +54,22 @@ reassert() {
     assert_vga
 }
 
-# Assert once at startup too: if this monitor (re)started after a power event
-# — e.g. a dbus restart — VGA_EN may already need re-forcing.
-assert_vga
+# Assert once at startup too, but only if VGA_EN is actually clear: if this
+# monitor (re)started after a power event — e.g. a dbus restart — VGA_EN may
+# need re-forcing, whereas on a normal boot the oneshot
+# (x570d4i2t-vga-enable.service, which we order After=) has just set it and
+# re-running the actuator would only duplicate the SCU unlock + write.
+if [ -r /dev/mem ] && cur=$(devmem 0x1e6e2180 32 2>/dev/null); then
+    if [ $(( cur & 0x1 )) -eq 1 ]; then
+        log "startup: VGA_EN already set (PCIE_CONF=$cur) — no action"
+    else
+        log "startup: VGA_EN clear (PCIE_CONF=$cur) — asserting"
+        assert_vga
+    fi
+else
+    # Could not read PCIE_CONF; fall back to asserting unconditionally.
+    assert_vga
+fi
 
 log "started — watching chassis0/host0 power state for power-on"
 
