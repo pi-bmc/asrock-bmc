@@ -7,8 +7,7 @@
 # which we can read the live BIOS attribute values and push back any pending
 # Redfish changes. Watching D-Bus is the stack-agnostic way to catch it: this
 # board's power control is daemon-based and publishes no obmc-*poweroff@
-# targets, so there is no systemd unit to order against (same reasoning as
-# x570d4i2t-vga-enable-monitor).
+# targets, so there is no systemd unit to order against.
 #
 # The match is scoped to the chassis0 object path so the read loop stays idle in
 # steady state; the sensor bus is otherwise very chatty.

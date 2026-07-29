@@ -143,8 +143,6 @@ checksum). A ~30 s AC power-drain is needed for some Setup changes to take.
 - `recipes-phosphor/sensors/`, `recipes-asrock/nct6779-bridge/` — NCT6779 hwmon
   bridge daemon, fan/temp mapping.
 - `recipes-phosphor/flash/` — host BIOS flashing via the GPIOJ1 SPI mux.
-- `recipes-asrock/vga-enable/`, `recipes-graphics/aspeed-video-watchdog/` —
-  KVM/VGA.
 
 ## Caveats
 

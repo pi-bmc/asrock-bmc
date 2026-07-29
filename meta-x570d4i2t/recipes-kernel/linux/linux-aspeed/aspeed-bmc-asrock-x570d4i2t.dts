@@ -389,8 +389,30 @@
 };
 
 &gfx {
-	status = "okay";
-	memory-region = <&gfx_memory>;
+	/*
+	 * The AST2500 "SOC display controller" (CRT1) is the *BMC's own*
+	 * display. This board has no local console (stdout-path = &uart5) and
+	 * the KVM captures the HOST VGA controller, so there is nothing for it
+	 * to do here. Disabled to match the other ASRock x86 AST2500 boards
+	 * in-tree (e3c246d4i, e3c256d4i, romed8hm3, spc621d8hm3).
+	 *
+	 * This node is a known red herring — do not "fix" the KVM here. If it
+	 * probes (which needs a memory-region; without one aspeed_gfx_load()
+	 * bails at of_reserved_mem_device_init() with -ENODEV, which is why the
+	 * sibling x570d4u's bare `status = "okay"` is inert), the fbdev initial
+	 * modeset hands the display DAC to CRT1 via SCU2C[16] and scans out a
+	 * black buffer at drm_add_modes_noedid()'s only mode, 800x600. That
+	 * matches this board's black-800x600 KVM symptom exactly and is still
+	 * NOT the cause: unbinding aspeed_gfx live clears SCU2C[16] and the
+	 * capture kept locking 800x600, and content written to /dev/fb0 never
+	 * reached the KVM. The video engine taps pre-mux, so the black 800x600
+	 * is genuinely the host's — the ASPEED GOP never runs (SCU50/54/58 all
+	 * zero), which is a host-firmware problem.
+	 *
+	 * gfx_memory is left declared (as upstream does) but unreferenced; it
+	 * is a `reusable` shared-dma-pool, so the page allocator still uses it.
+	 */
+	status = "disabled";
 };
 
 &vhub {

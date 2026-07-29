@@ -35,8 +35,6 @@ RDEPENDS:${PN}-system = " \
         supermicro-psu-monitor \
         phosphor-software-manager \
         phosphor-software-manager-bios-software-update \
-        x570d4i2t-vga-enable \
-        aspeed-video-watchdog \
         smbios-mdr \
         phosphor-ipmi-blobs \
         biosconfig-manager \
