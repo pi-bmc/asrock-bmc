@@ -68,10 +68,38 @@ asrock_oem_deps = [
 # SMBIOS still flows host -> BMC via the standard smbios-ipmi-blob (/smbios)
 # receiver (see smbios-mdr_%.bbappend) fed by the injected SmbiosBmcPushDxe;
 # standard phosphor providers handle everything else.
+#   * biosvarstore.cpp — the two payload formats that carry live values:
+#     type 2 "ASVS" (host -> BMC, the backing UEFI variables as the firmware
+#     read them) and type 3 "ASPS" (BMC -> host, PendingAttributes encoded as
+#     varstore writes).  Shared with asrock-bios-nvram so both agree on option
+#     parsing and value spelling.
 asrockoemcmds_src = [
     'src/kcsmonitor.cpp',
     'src/biosconfigcommands.cpp',
+    'src/biosvarstore.cpp',
 ]
+
+# -----------------------------------------------------------------------
+# asrock-bios-nvram — BIOS attribute values backed by the host BIOS flash
+# -----------------------------------------------------------------------
+# The values in the XML the BIOS pushes are its *defaults*, not the live
+# configuration (see src/biosnvram.hpp). This tool reads the real values out of
+# the AMI NVAR store in the BIOS SPI flash — which the BMC owns via the SPI mux
+# while the host is powered off — and publishes them to BaseBIOSTable, and folds
+# Redfish PendingAttributes back into a flash image for flashcp. Deliberately a
+# separate binary from the ipmid provider: it runs on host power transitions,
+# not on IPMI traffic, and it must never be loaded into ipmid's address space
+# just to touch a 32 MB file.
+executable(
+    'asrock-bios-nvram',
+    sources: ['src/biosnvram.cpp', 'src/biosnvramtool.cpp',
+              'src/biosvarstore.cpp'],
+    include_directories: include_directories('.'),
+    implicit_include_directories: false,
+    dependencies: [phosphor_logging_dep, sdbusplus_dep, tinyxml_dep],
+    install: true,
+    install_dir: get_option('libexecdir'),
+)
 
 library(
     'zasrockoemcmds',

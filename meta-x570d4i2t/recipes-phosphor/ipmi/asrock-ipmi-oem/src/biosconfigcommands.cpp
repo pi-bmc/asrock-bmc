@@ -46,6 +46,7 @@
 
 #include "biosconfigcommands.hpp"
 
+#include "biosvarstore.hpp"
 #include "biosxml.hpp"
 
 #include <ipmid/api.hpp>
@@ -195,6 +196,33 @@ static void loadCapability()
     catch (const std::exception&)
     {
         // fall back to defaults
+    }
+
+    // Republish what we already hold so GetPayload(Info) can answer it across a
+    // BMC reboot. Without this the host's skip gate only works for the life of
+    // one ipmid instance and every BMC restart costs a 13.7 KB KCS transfer
+    // during the next POST. The size comes from the payload persisted by
+    // recordPayload(); the checksum is the one we committed against it.
+    for (size_t i = 0; i < maxPayloadTypes; ++i)
+    {
+        if (g_committedChecksum[i] == 0)
+        {
+            continue;
+        }
+        std::error_code ec;
+        const auto path =
+            std::string(stateDir) + "/Payload" + std::to_string(i);
+        const auto size = fs::file_size(path, ec);
+        if (ec || size == 0 || size > maxPayloadSize)
+        {
+            continue;
+        }
+        PayloadMeta& md = g_meta[i];
+        md.version = 1;
+        md.type = static_cast<uint8_t>(i);
+        md.totalSize = static_cast<uint32_t>(size);
+        md.totalChecksum = g_committedChecksum[i];
+        md.status = static_cast<uint8_t>(PayloadStatus::valid);
     }
 }
 
@@ -359,17 +387,18 @@ static bool processBiosXml(const std::vector<uint8_t>& payload,
             return false;
         }
 
-        // Force every attribute read-only. bios::Xml hands back readOnly=false,
-        // which advertises these as live, settable values; on this board they
-        // are neither. The document the BIOS pushes is its *defaults* template:
-        // every knob's CurrentVal equals its own default, the payload is
-        // byte-identical on every POST, and two knobs that share one Setup byte
-        // (CSM009/SLOTOPROM022 at 0x01BA) report different "current" values --
-        // impossible for a live read. The real values live in the Setup NVRAM
-        // variable in the BIOS flash. There is also no write-back path: this
-        // firmware never issues GetPayload, so nothing a client writes here can
-        // reach the BIOS. Marking them read-only keeps Redfish from presenting
-        // editable knobs that would silently do nothing.
+        // Force every attribute read-only *in this table*. The schema alone
+        // carries no live values: it is a defaults template compiled into the
+        // firmware, identical on every POST, in which every knob's CurrentVal
+        // equals its own default and two knobs sharing one Setup byte
+        // (CSM009/SLOTOPROM022 at 0x01BA) claim different "current" values --
+        // impossible for a real read.
+        //
+        // This is the bootstrap table only. The type-2 varstore snapshot that
+        // follows in the same boot republishes these with the values the
+        // firmware actually read, and marks them writable, because that path
+        // does have a write-back route (type 3 -> gRT->SetVariable). Until it
+        // lands, read-only is the honest answer.
         for (auto& attribute : table)
         {
             std::get<1>(attribute.second) = true;
@@ -382,6 +411,277 @@ static bool processBiosXml(const std::vector<uint8_t>& payload,
                         entry("ERR=%s", e.what()));
         return false;
     }
+}
+
+// ===========================================================================
+// Live values (payload type 2) and staged writes (payload type 3)
+//
+// The type-1 XML is a defaults template: it says where every knob lives but
+// its CurrentVal is the knob's own default. BiosCfgOobDxe on the host closes
+// that gap by reading the backing UEFI variables with GetVariable and pushing
+// their raw bytes as type 2, and by pulling type 3 back and applying it with
+// SetVariable. Everything below is the BMC half of those two exchanges.
+// ===========================================================================
+
+// Schema knobs, parsed once from the last committed type-1 payload. Invalidated
+// whenever a new schema is committed.
+static std::vector<bios::knob::knob> g_knobs;
+static bool g_knobsValid = false;
+
+// The most recent type-2 snapshot, kept so GetPayload(type 3) can restrict the
+// writes it hands back to varstores the firmware demonstrably has.
+static asrock::varstore::Snapshot g_snapshot;
+
+static std::string schemaXmlPath()
+{
+    return std::string(stateDir) + "/Payload" +
+           std::to_string(static_cast<unsigned>(PayloadType::xmlType1)) +
+           ".xml";
+}
+
+static const std::vector<bios::knob::knob>* schemaKnobs()
+{
+    if (!g_knobsValid)
+    {
+        try
+        {
+            bios::Xml xml(schemaXmlPath().c_str());
+            xml.doDepexCompute();
+            g_knobs = xml.getKnobList();
+            g_knobsValid = true;
+        }
+        catch (const std::exception& e)
+        {
+            log<level::ERR>("biosconfig: cannot load knob schema",
+                            entry("PATH=%s", schemaXmlPath().c_str()),
+                            entry("ERR=%s", e.what()));
+            return nullptr;
+        }
+    }
+    return g_knobs.empty() ? nullptr : &g_knobs;
+}
+
+static bool getPendingAttributes(PendingAttributes& out)
+{
+    try
+    {
+        auto bus = ::getSdBus();
+        auto m = bus->new_method_call(biosMgrService, biosMgrPath,
+                                      "org.freedesktop.DBus.Properties", "Get");
+        m.append(std::string(biosMgrIface), std::string("PendingAttributes"));
+        auto reply = bus->call(m);
+        std::variant<PendingAttributes> v;
+        reply.read(v);
+        out = std::get<PendingAttributes>(v);
+        return true;
+    }
+    catch (const std::exception&)
+    {
+        return false;
+    }
+}
+
+static bool setPendingAttributes(const PendingAttributes& value)
+{
+    try
+    {
+        auto bus = ::getSdBus();
+        auto m = bus->new_method_call(biosMgrService, biosMgrPath,
+                                      "org.freedesktop.DBus.Properties", "Set");
+        m.append(std::string(biosMgrIface), std::string("PendingAttributes"),
+                 std::variant<PendingAttributes>(value));
+        bus->call(m);
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        log<level::ERR>("biosconfig: cannot update PendingAttributes",
+                        entry("ERR=%s", e.what()));
+        return false;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Retire the staged attributes that the freshly received snapshot proves are
+// now in effect.
+//
+// The host sends no explicit "applied" acknowledgement, and deliberately so: a
+// SetVariable that returns EFI_SUCCESS is not evidence the BIOS kept the value.
+// Using the next snapshot as the acknowledgement means an attribute only leaves
+// PendingAttributes once the firmware has read the new value back out of its
+// own varstore. Anything that silently failed simply stays pending and is
+// retried on the next boot.
+// ---------------------------------------------------------------------------
+static void retirePendingFromSnapshot(
+    const std::vector<bios::knob::knob>& knobs,
+    const asrock::varstore::Snapshot& snap)
+{
+    PendingAttributes pending;
+    if (!getPendingAttributes(pending) || pending.empty())
+    {
+        return;
+    }
+
+    PendingAttributes remaining;
+    std::size_t retired = 0;
+
+    for (const auto& [name, entry] : pending)
+    {
+        const bios::knob::knob* knob = nullptr;
+        for (const auto& k : knobs)
+        {
+            if (k.nameStr == name)
+            {
+                knob = &k;
+                break;
+            }
+        }
+
+        bool applied = false;
+        if (knob != nullptr)
+        {
+            const auto* rec = snap.find(knob->varstoreIndex);
+            uint64_t live = 0;
+            uint64_t want = 0;
+            const auto& variant = std::get<1>(entry);
+            const std::string wantStr =
+                std::holds_alternative<std::string>(variant)
+                    ? std::get<std::string>(variant)
+                    : std::to_string(std::get<int64_t>(variant));
+
+            if (rec != nullptr &&
+                asrock::varstore::readField(*rec, knob->offset, knob->size,
+                                            live) &&
+                asrock::varstore::parseNumber(wantStr, want) && live == want)
+            {
+                applied = true;
+            }
+        }
+
+        if (applied)
+        {
+            ++retired;
+        }
+        else
+        {
+            remaining.emplace(name, entry);
+        }
+    }
+
+    if (retired != 0)
+    {
+        log<level::INFO>("biosconfig: staged attributes now live in the BIOS",
+                         entry("RETIRED=%zu", retired),
+                         entry("REMAINING=%zu", remaining.size()));
+        setPendingAttributes(remaining);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Turn a type-2 snapshot into BaseBIOSTable.
+// ---------------------------------------------------------------------------
+static bool publishSnapshot(const std::vector<uint8_t>& blob)
+{
+    asrock::varstore::Snapshot snap;
+    if (!asrock::varstore::parseSnapshot(blob, snap))
+    {
+        log<level::ERR>("biosconfig: malformed varstore snapshot",
+                        entry("BYTES=%zu", blob.size()));
+        return false;
+    }
+
+    const auto* knobs = schemaKnobs();
+    if (knobs == nullptr)
+    {
+        // The schema arrives as a separate payload; on a fresh BMC the host
+        // sends it in the same boot, but ordering is the host's choice.
+        log<level::WARNING>(
+            "biosconfig: varstore snapshot received before any schema");
+        return false;
+    }
+
+    bios::BiosBaseTableType table;
+    std::size_t live = 0;
+    asrock::varstore::buildTable(*knobs, snap, table, live);
+    if (table.empty() || live == 0)
+    {
+        log<level::ERR>(
+            "biosconfig: snapshot resolved no attribute; keeping old table",
+            entry("VARSTORES=%zu", snap.records.size()),
+            entry("COUNT=%zu", table.size()));
+        return false;
+    }
+
+    if (!commitBaseBIOSTable(table))
+    {
+        return false;
+    }
+
+    log<level::INFO>("biosconfig: BaseBIOSTable updated from live varstores",
+                     entry("VARSTORES=%zu", snap.records.size()),
+                     entry("COUNT=%zu", table.size()),
+                     entry("LIVE=%zu", live));
+
+    retirePendingFromSnapshot(*knobs, snap);
+    g_snapshot = std::move(snap);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Encode PendingAttributes into the type-3 payload slot so GetPayload can serve
+// it. Rebuilt on every GetPayload so the host always sees the current staging
+// state, not whatever was staged when the last one was built.
+//
+// The "generation" is the CRC32 of the records themselves rather than a
+// counter: it needs no persistence, and it changes exactly when the staged set
+// changes. The host stores the last generation it applied and resets at most
+// once per change, so a value it has already written can never drive a boot
+// loop.
+// ---------------------------------------------------------------------------
+static void refreshPendingPayload()
+{
+    constexpr auto type = static_cast<size_t>(PayloadType::pendingSettings);
+
+    const auto* knobs = schemaKnobs();
+    PendingAttributes pending;
+    getPendingAttributes(pending);
+
+    std::vector<uint8_t> blob;
+    std::size_t count = 0;
+    if (knobs != nullptr && !pending.empty())
+    {
+        // Two passes: the generation has to cover the encoded records, so build
+        // once with a zero generation to hash, then re-encode with it.
+        count = asrock::varstore::buildPendingBlob(*knobs, g_snapshot, pending,
+                                                   0, blob);
+        if (count != 0)
+        {
+            uint32_t gen = crc32(blob.data(), blob.size());
+            if (gen == 0)
+            {
+                gen = 1; // 0 means "nothing staged" to the host
+            }
+            asrock::varstore::buildPendingBlob(*knobs, g_snapshot, pending, gen,
+                                               blob);
+        }
+    }
+    if (count == 0)
+    {
+        // Still publish a well-formed empty blob: the host asks every boot and
+        // a valid "nothing staged" answer is cheaper than a failed fetch.
+        asrock::varstore::buildPendingBlob({}, {}, {}, 0, blob);
+    }
+
+    g_payload[type] = blob;
+
+    PayloadMeta& md = g_meta[type];
+    md.version = 1;
+    md.type = static_cast<uint8_t>(type);
+    md.totalSize = static_cast<uint32_t>(blob.size());
+    md.totalChecksum = crc32(blob.data(), blob.size());
+    md.flag = 0;
+    md.status = static_cast<uint8_t>(PayloadStatus::valid);
+    md.timestamp = static_cast<uint32_t>(::time(nullptr));
 }
 
 // ---------------------------------------------------------------------------
@@ -613,6 +913,7 @@ static ipmi::RspType<uint32_t> ipmiSetPayload(uint8_t stateByte,
                          processBiosXml(buf, xmlPath))
                 {
                     g_committedChecksum[payloadType] = whole;
+                    g_knobsValid = false; // reparse: the schema just changed
                     storeCapability();
                     log<level::INFO>(
                         "biosconfig: BaseBIOSTable updated from BIOS XML",
@@ -625,6 +926,26 @@ static ipmi::RspType<uint32_t> ipmiSetPayload(uint8_t stateByte,
                         "biosconfig: BIOS XML captured but BaseBIOSTable not "
                         "updated (see prior errors)",
                         entry("TYPE=%u", static_cast<unsigned>(payloadType)),
+                        entry("BYTES=%u", static_cast<unsigned>(buf.size())));
+                }
+            }
+            // The live varstore bytes. This is what makes the published values
+            // real: it always follows the schema (skipped or not) in the same
+            // boot, so a schema re-push can no longer leave Redfish showing
+            // defaults until the next power-off flash sync.
+            else if (payloadType ==
+                     static_cast<uint8_t>(PayloadType::varstoreSnapshot))
+            {
+                // No checksum bookkeeping here: recordPayload() above already
+                // filled g_meta[2], which is what GetPayload(Info) answers, so
+                // the host's skip gate is driven by the last snapshot this
+                // ipmid instance actually saw. Losing that on restart is the
+                // right behaviour -- a fresh instance wants the values again.
+                if (!publishSnapshot(buf))
+                {
+                    log<level::WARNING>(
+                        "biosconfig: varstore snapshot captured but not "
+                        "published (see prior errors)",
                         entry("BYTES=%u", static_cast<unsigned>(buf.size())));
                 }
             }
@@ -654,12 +975,24 @@ static ipmi::RspType<std::vector<uint8_t>>
         return rsp<std::vector<uint8_t>>(ipmi::ccParmOutOfRange);
     }
 
-    // GetPayload serves whatever SetPayload last stored for this type. The
-    // BMC->host readback of Redfish-staged changes (Intel serves that back as
-    // XML) depends on a BaseBIOSTable->XML writer, which is future work.
+    loadCapability();
+    const auto param = static_cast<GetParam>(paramByte);
+
+    // Type 3 is generated, not stored: it is PendingAttributes as of right now,
+    // encoded as varstore writes. Rebuild it when the host asks for the info
+    // header -- and only then. The host reads Info, then pulls the body in
+    // chunks against the size and CRC32 that header quoted, so regenerating
+    // mid-transfer (a Redfish PATCH can land between two chunks) would hand it
+    // a body that fails its own integrity check. Every other type simply serves
+    // whatever SetPayload last stored.
+    if (payloadType == static_cast<uint8_t>(PayloadType::pendingSettings) &&
+        param == GetParam::info)
+    {
+        refreshPendingPayload();
+    }
+
     const PayloadMeta& md = g_meta[payloadType];
     const std::vector<uint8_t>& buf = g_payload[payloadType];
-    const auto param = static_cast<GetParam>(paramByte);
     std::vector<uint8_t> resp;
 
     switch (param)

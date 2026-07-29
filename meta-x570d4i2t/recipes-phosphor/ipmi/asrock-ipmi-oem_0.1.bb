@@ -27,8 +27,16 @@ SRC_URI = " \
     file://src/kcsmonitor.cpp \
     file://src/biosconfigcommands.cpp \
     file://src/biosconfigcommands.hpp \
+    file://src/biosnvram.cpp \
+    file://src/biosnvram.hpp \
+    file://src/biosnvramtool.cpp \
+    file://src/biosvarstore.cpp \
+    file://src/biosvarstore.hpp \
     file://src/biosxml.hpp \
     file://src/types.hpp \
+    file://files/asrock-bios-flash-sync.sh \
+    file://files/asrock-bios-flash-monitor.sh \
+    file://files/asrock-bios-flash-monitor.service \
     "
 
 S = "${UNPACKDIR}"
@@ -44,6 +52,22 @@ DEPENDS = " \
 
 inherit meson pkgconfig obmc-phosphor-ipmiprovider-symlink systemd
 
+# The BIOS flash is only reachable while the host is off, so the sync runs off a
+# D-Bus power-state watcher rather than a boot-time oneshot.
+SYSTEMD_SERVICE:${PN} += "asrock-bios-flash-monitor.service"
+
+do_install:append() {
+    install -d ${D}${libexecdir}
+    install -m 0755 ${UNPACKDIR}/files/asrock-bios-flash-sync.sh \
+        ${D}${libexecdir}/asrock-bios-flash-sync.sh
+    install -m 0755 ${UNPACKDIR}/files/asrock-bios-flash-monitor.sh \
+        ${D}${libexecdir}/asrock-bios-flash-monitor.sh
+
+    install -d ${D}${systemd_system_unitdir}
+    install -m 0644 ${UNPACKDIR}/files/asrock-bios-flash-monitor.service \
+        ${D}${systemd_system_unitdir}/asrock-bios-flash-monitor.service
+}
+
 # Library name must match the library() target in meson.build
 LIBRARY_NAMES = "libzasrockoemcmds.so"
 
@@ -55,5 +79,8 @@ FILES:${PN}:append = " \
     ${libdir}/ipmid-providers/lib*${SOLIBS} \
     ${libdir}/host-ipmid/lib*${SOLIBS} \
     ${libdir}/net-ipmid/lib*${SOLIBS} \
+    ${libexecdir}/asrock-bios-nvram \
+    ${libexecdir}/asrock-bios-flash-sync.sh \
+    ${libexecdir}/asrock-bios-flash-monitor.sh \
     "
 FILES:${PN}-dev:append = " ${libdir}/ipmid-providers/lib*${SOLIBSDEV}"

@@ -1,11 +1,20 @@
-SUMMARY = "Patched host BIOS image (ASRock X570D4I-2T 2.59C + SmbiosBmcPushDxe)"
+SUMMARY = "Patched host BIOS image (ASRock X570D4I-2T 2.59C + BMC push driver)"
 DESCRIPTION = "\
-Fetches upstream EDK2, builds the local SmbiosBmcPushDxe module as an X64 \
+Fetches upstream EDK2, builds the local host->BMC push driver as an X64 \
 DXE_DRIVER, downloads the stock ASRock X570D4I-2T 2.59C AMI Aptio BIOS image, \
 and injects the built module with LongSoft UEFIReplace.  The patch replaces the \
 PE32 and DXE dependency sections of AMI SendInfoBmcIpmiDxe \
 (FILE_GUID 9DF02DFD-8CF7-4FC7-B8AE-CBD9560A3F24) in all duplicate firmware \
 volume copies.  The finished ROM is asserted to remain exactly 32 MiB.\
+\
+The injected driver has two halves: SmbiosBmcPushDxe (SMBIOS over \
+phosphor-ipmi-blobs) and BiosCfgOobDxe, the host side of the OpenBMC \
+BIOS-config OOB command set (NetFn 0x30, cmds 0xD3-0xD6).  The stock BIOS has \
+no BIOS-config producer of its own -- verified by decompiling both 2.59C and \
+2.59F: stock SendInfoBmcIpmiDxe is 3 KB and never issues 0xD3/0xD5, and no \
+module in either image contains the XML the BMC receives.  BiosCfgOobDxe \
+supplies it, and unlike the earlier ad-hoc build it also reports the LIVE knob \
+values read with gRT->GetVariable and applies settings staged from Redfish.\
 "
 
 # The deliverable is the proprietary ASRock/AMI Aptio BIOS image (redistribution
@@ -24,6 +33,11 @@ SRC_URI = " \
     https://download.asrock.com/BIOS/Server/X570D4I-2T(2.59C)ROM.zip;name=bios;downloadfilename=x570d4i2t-bios-2.59C.zip \
     file://SmbiosBmcPushDxe.c \
     file://SmbiosBmcPushDxe.inf \
+    file://BiosCfgOobDxe.c \
+    file://HostBmcKcs.h \
+    file://BiosCfgOobVarstores.h \
+    file://x570d4i2t-bios-knobs.xml \
+    file://gen-schema-header.py \
 "
 
 # edk2-stable202602, matching the OpenBMC meta-arm edk2-basetools-native pin.
@@ -72,10 +86,21 @@ do_configure() {
     install -d "${B}/Conf"
     install -d "${B}/Platform/ASRockRack/X570D4I2TPkg/SmbiosBmcPushDxe"
 
-    install -m 0644 "${UNPACKDIR}/SmbiosBmcPushDxe.c" \
-        "${B}/Platform/ASRockRack/X570D4I2TPkg/SmbiosBmcPushDxe/SmbiosBmcPushDxe.c"
-    install -m 0644 "${UNPACKDIR}/SmbiosBmcPushDxe.inf" \
-        "${B}/Platform/ASRockRack/X570D4I2TPkg/SmbiosBmcPushDxe/SmbiosBmcPushDxe.inf"
+    MODDIR="${B}/Platform/ASRockRack/X570D4I2TPkg/SmbiosBmcPushDxe"
+
+    for f in SmbiosBmcPushDxe.c SmbiosBmcPushDxe.inf BiosCfgOobDxe.c \
+             HostBmcKcs.h BiosCfgOobVarstores.h; do
+        install -m 0644 "${UNPACKDIR}/${f}" "${MODDIR}/${f}"
+    done
+
+    # The knob schema is a build input, not a checked-in binary: the readable
+    # XML is compressed and turned into a C array here.  Reproducibility is
+    # load-bearing -- the DXE quotes the resulting length and CRC32 to the BMC
+    # so it can skip re-sending a payload the BMC already holds.
+    python3 "${UNPACKDIR}/gen-schema-header.py" \
+        "${UNPACKDIR}/x570d4i2t-bios-knobs.xml" \
+        "${MODDIR}/BiosCfgOobSchema.h" || \
+        bbfatal "failed to generate BiosCfgOobSchema.h"
 
     cat > "${B}/Platform/ASRockRack/X570D4I2TPkg/SmbiosBmcPush.dsc" <<'DSCEOF'
 [Defines]

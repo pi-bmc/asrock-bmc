@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <map>
 #include <sstream>
 #include <stack>
@@ -105,6 +106,16 @@ struct knob
     bool depex;
     bool readOnly;
     int currentVal;
+
+    /* Location of this knob's value inside its varstore (the HII schema).
+     * Unlike CurrentVal -- which this BIOS fills with the knob's own default --
+     * these describe where the *real* value lives in the corresponding NVRAM
+     * variable in the BIOS flash, and were validated against the flash by an
+     * enum-validity check (every byte read is a declared option of its knob).
+     * varstoreIndex < 0 means the XML did not carry one. */
+    int varstoreIndex = -1;
+    unsigned offset = 0;
+    unsigned size = 1;
 
     std::string nameStr;
     std::string currentValStr;
@@ -723,6 +734,18 @@ class Xml
         return false;
     }
 
+    /* Parsed knobs, including the HII schema location (varstoreIndex/offset/
+     * size) needed to read or write a knob's real value in the BIOS flash. */
+    const std::vector<knob::knob>& getKnobList() const
+    {
+        return mKnobs;
+    }
+
+    std::vector<knob::knob>& getKnobList()
+    {
+        return mKnobs;
+    }
+
     /* Execute all 'depex' expression */
     bool doDepexCompute()
     {
@@ -839,6 +862,24 @@ class Xml
             mKnobs.emplace_back(nameStr, currentValStr, currentVal,
                                 descriptionStr, defaultStr, promptStr, depexStr,
                                 setupTypeStr);
+
+            /* Carry the HII schema location through so callers can read the
+             * knob's real value out of the BIOS flash NVRAM variable. */
+            auto parseNum = [](const char* s, unsigned& out) {
+                if (!s)
+                    return;
+                // offset is written "0x016A", size plain decimal. Pick the base
+                // explicitly: base 0 would read a zero-padded decimal as octal.
+                const bool hex = (s[0] == '0' && (s[1] == 'x' || s[1] == 'X'));
+                out = static_cast<unsigned>(std::strtoul(s, nullptr,
+                                                         hex ? 16 : 10));
+            };
+            if (const char* vs = pKnob->Attribute("varstoreIndex"))
+                mKnobs.back().varstoreIndex = atoi(vs);
+            parseNum(pKnob->Attribute("offset"), mKnobs.back().offset);
+            parseNum(pKnob->Attribute("size"), mKnobs.back().size);
+            if (mKnobs.back().size == 0)
+                mKnobs.back().size = 1;
 
             getOptions(pKnob);
         }

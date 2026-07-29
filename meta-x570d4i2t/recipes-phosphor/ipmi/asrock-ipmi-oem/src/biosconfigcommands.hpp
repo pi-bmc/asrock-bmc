@@ -68,16 +68,30 @@ constexpr uint8_t ccBIOSCapabilityInitNotDone = 0x85;
 // ---------------------------------------------------------------------------
 // Payload types carried by Set/GetPayload.
 //
-// CONFIRMED by KCS capture: the AMI BIOS pushes payloadType 1. In Intel's
-// scheme 0/1 are "IntelXMLType0/1" — a BIOS-config XML document (Intel server
-// BIOS is AMI Aptio, so this board's AMI BIOS emits the same XML). Type 5 is an
-// opaque/OTA blob stored to disk only.
+// Intel's scheme uses 0/1 for "IntelXMLType0/1" (a BIOS-config XML document)
+// and 5 for an opaque OTA blob, leaving 2-4 free inside maxPayloadSupported.
+//
+// The host producer is our own BiosCfgOobDxe, injected into the AMI
+// SendInfoBmcIpmiDxe FFS slot (see recipes-bsp/host-bios-image). The stock
+// ASRock firmware has NO BIOS-config producer: decompiling 2.59C and 2.59F
+// shows their SendInfoBmcIpmiDxe is a 3 KB module that never issues 0xD3/0xD5,
+// and neither image contains the XML anywhere, compressed or not.
+//
+// Type 1 alone can never show the live configuration -- it is a defaults
+// template compiled into the firmware, identical on every POST. Types 2 and 3
+// are what make the Redfish BIOS endpoints truthful and writable:
 // ---------------------------------------------------------------------------
 enum class PayloadType : uint8_t
 {
-    // host -> BMC: BIOS-config XML -> BaseBIOSTable (both 0 and 1 are XML).
+    // host -> BMC: BIOS-config XML -> the *schema* behind BaseBIOSTable.
     xmlType0 = 0,
     xmlType1 = 1,
+    // host -> BMC: "ASVS" — the backing UEFI variables as the firmware read
+    // them with GetVariable. Supplies every CurrentValue.
+    varstoreSnapshot = 2,
+    // BMC -> host: "ASPS" — PendingAttributes encoded as varstore writes for
+    // the firmware to apply with SetVariable.
+    pendingSettings = 3,
     // opaque blob, persisted to disk only.
     ota = 5,
     maxType = 6,

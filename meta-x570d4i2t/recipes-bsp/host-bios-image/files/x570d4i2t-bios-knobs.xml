@@ -1,0 +1,3006 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SYSTEM>
+ <biosknobs>
+  <knob type="scalar" setupType="checkbox" name="PCID001" varstoreIndex="2" prompt="Above 4G Decoding" description="Globally Enables or Disables 64bit capable Devices to be Decoded in Above 4G Address Space (Only if System Supports 64 bit PCI Decoding)." size="1" offset="0x0003" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="PCID002" varstoreIndex="2" prompt="SR-IOV Support" description="If system has SR-IOV capable PCIe Devices, this option Enables or Disables Single Root IO Virtualization Support." size="1" offset="0x0005" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PCID007" varstoreIndex="2" prompt="Re-Size BAR Support" description="If system has Resizable BAR capable PCIe Devices, this option Enables or Disables Resizable BAR Support(Only if System Supports 64 bit PCI Decoding)." size="1" offset="0x0004" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Auto" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SETUP006" varstoreIndex="11" prompt="Boot Option #%d" description="Sets the system boot order" size="2" offset="0x0000" default="0x0000" CurrentVal="0x0000">
+   <options>
+    <option text="" value="0x0000"/>
+    <option text="" value="0x0001"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SETUP006" varstoreIndex="11" prompt="Boot Option #%d" description="Sets the system boot order" size="2" offset="0x0000" default="0x0000" CurrentVal="0x0000">
+   <options>
+    <option text="" value="0x0000"/>
+    <option text="" value="0x0001"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="PCID001" varstoreIndex="2" prompt="Above 4G Decoding" description="Globally Enables or Disables 64bit capable Devices to be Decoded in Above 4G Address Space (Only if System Supports 64 bit PCI Decoding)." size="1" offset="0x0003" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PCID007" varstoreIndex="2" prompt="Re-Size BAR Support" description="If system has Resizable BAR capable PCIe Devices, this option Enables or Disables Resizable BAR Support(Only if System Supports 64 bit PCI Decoding)." size="1" offset="0x0004" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Auto" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="PCID002" varstoreIndex="2" prompt="SR-IOV Support" description="If system has SR-IOV capable PCIe Devices, this option Enables or Disables Single Root IO Virtualization Support." size="1" offset="0x0005" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="PCID003" varstoreIndex="2" prompt="BME DMA Mitigation" description="Re-enable Bus Master Attribute disabled during Pci enumeration for PCI Bridges after SMM Locked " size="1" offset="0x0006" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SETUP000" varstoreIndex="0" prompt="System Language" description="Choose the system default language" size="2" offset="0x0000" default="0x0000" CurrentVal="0x0000">
+   <options>
+    <option text="" value="0x0000"/>
+    <option text="" value="0x0001"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG003" varstoreIndex="1" prompt="  Security Device Support" description="Enables or Disables BIOS support for security device. O.S. will not show Security Device. TCG EFI protocol and INT1A interface will not be available." size="1" offset="0x0012" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG023" varstoreIndex="1" prompt="  Disable Block Sid" description="  Override to allow SID authentication in TCG Storage device" size="1" offset="0x002D" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG003" varstoreIndex="1" prompt="  Security Device Support" description="Enables or Disables BIOS support for security device. O.S. will not show Security Device. TCG EFI protocol and INT1A interface will not be available." size="1" offset="0x0012" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG001" varstoreIndex="1" prompt="  TPM State" description="Enable/Disable Security Device. NOTE: Your Computer will reboot during restart in order to change State of the Device." size="1" offset="0x000D" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG006" varstoreIndex="1" prompt="Pending operation" description="Schedule an Operation for the Security Device. NOTE: Your Computer will reboot during restart in order to change State of Security Device." size="1" offset="0x000E" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="None" value="0x00"/>
+    <option text="TPM Clear" value="0x05"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG004" varstoreIndex="1" prompt="  Security Device Support" description="Enables or Disables BIOS support for security device. O.S. will not show Security Device. TCG EFI protocol and INT1A interface will not be available." size="1" offset="0x0012" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG002" varstoreIndex="1" prompt="  TCM State" description="Enable/Disable Security Device. NOTE: Your Computer will reboot during restart in order to change State of the Device." size="1" offset="0x000D" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG006" varstoreIndex="1" prompt="Pending operation" description="Schedule an Operation for the Security Device. NOTE: Your Computer will reboot during restart in order to change State of Security Device." size="1" offset="0x000E" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="None" value="0x00"/>
+    <option text="TPM Clear" value="0x05"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG016" varstoreIndex="1" prompt="  Device Select" description="TPM 1.2 will restrict support to TPM 1.2 devices, TPM 2.0 will restrict support to TPM 2.0 devices, Auto will support both with the default set to TPM 2.0 devices if not found, TPM 1.2 devices will be enumerated " size="1" offset="0x001F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="TPM 1.2" value="0x00"/>
+    <option text="TPM 2.0" value="0x01"/>
+    <option text="Auto" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG003" varstoreIndex="1" prompt="  Security Device Support" description="Enables or Disables BIOS support for security device. O.S. will not show Security Device. TCG EFI protocol and INT1A interface will not be available." size="1" offset="0x0012" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG017" varstoreIndex="1" prompt="  SHA-1 PCR Bank" description="Enable or Disable SHA-1 PCR Bank" size="1" offset="0x0026" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG018" varstoreIndex="1" prompt="  SHA256 PCR Bank" description="Enable or Disable SHA256 PCR Bank" size="1" offset="0x0027" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG019" varstoreIndex="1" prompt="  SHA384 PCR Bank" description="Enable or Disable SHA384 PCR Bank" size="1" offset="0x0028" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG020" varstoreIndex="1" prompt="  SHA512 PCR Bank" description="Enable or Disable SHA512 PCR Bank" size="1" offset="0x0029" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x08"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG021" varstoreIndex="1" prompt="  SM3_256 PCR Bank" description="Enable or Disable SM3_256 PCR Bank" size="1" offset="0x002A" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG007" varstoreIndex="1" prompt="  Pending operation" description="Schedule an Operation for the Security Device. NOTE: Your Computer will reboot during restart in order to change State of Security Device." size="1" offset="0x000E" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="None" value="0x00"/>
+    <option text="TPM Clear" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG011" varstoreIndex="1" prompt="  Platform Hierarchy" description="Enable or Disable Platform Hierarchy" size="1" offset="0x001B" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG012" varstoreIndex="1" prompt="  Storage Hierarchy" description="Enable or Disable Storage Hierarchy" size="1" offset="0x001C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG013" varstoreIndex="1" prompt="  Endorsement Hierarchy" description="Enable or Disable Endorsement Hierarchy" size="1" offset="0x001D" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG022" varstoreIndex="1" prompt="  Physical Presence Spec Version" description="  Select to Tell O.S. to support PPI Spec Version 1.2 or 1.3. Note some HCK tests might not support 1.3." size="1" offset="0x002C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="1.2" value="0x00"/>
+    <option text="1.3" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG010" varstoreIndex="1" prompt="  TPM 2.0 UEFI Spec Version" description="Select the TCG2 Spec Version Support,
+
+TCG_1_2: the Compatible mode for Win8/Win10,
+
+TCG_2: Support new TCG2 protocol and event format for Win10 or later" size="1" offset="0x001A" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="TCG_1_2" value="0x01"/>
+    <option text="TCG_2" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG014" varstoreIndex="1" prompt="  TPM 2.0 InterfaceType" description="  Select the Communication Interface to TPM 20 Device." size="1" offset="0x001E" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="CRB" value="0x00"/>
+    <option text="TIS" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG016" varstoreIndex="1" prompt="  Device Select" description="TPM 1.2 will restrict support to TPM 1.2 devices, TPM 2.0 will restrict support to TPM 2.0 devices, Auto will support both with the default set to TPM 2.0 devices if not found, TPM 1.2 devices will be enumerated " size="1" offset="0x001F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="TPM 1.2" value="0x00"/>
+    <option text="TPM 2.0" value="0x01"/>
+    <option text="Auto" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TCG023" varstoreIndex="1" prompt="  Disable Block Sid" description="  Override to allow SID authentication in TCG Storage device" size="1" offset="0x002D" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PSP001" varstoreIndex="1" prompt="SPI/LPC/fTPM TPM switch" description="To select. 0 - AMD CPU fTPM. 1 - LPC TPM. 2 - SPI TPM" size="1" offset="0x002F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="AMD CPU fTPM" value="0x00"/>
+    <option text="LPC TPM" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PSP002" varstoreIndex="1" prompt="Erase fTPM NV for factory reset" description="When New CPU is installed, Select &amp;quot;Enabled&amp;quot; to reset fTPM, if you have BitLocker or encryption-enabled system, the system will not boot without a recovery key. Select &amp;quot;Disabled&amp;quot; to keep previous fTPM record and continue system boot, fTPM will NOT be enabled with new CPU unless fTPM is reset (reinitialized), you could swap back to the old CPU to recover TPM related keys and data." size="1" offset="0x0030" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU001" varstoreIndex="1" prompt="PSS Support" description="Enable/disable the generation of ACPI _PPC, _PSS, and _PCT objects." size="1" offset="0x0181" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU005" varstoreIndex="1" prompt="SVM Mode" description="Enable/disable CPU Virtualization" size="1" offset="0x0184" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PSP001" varstoreIndex="1" prompt="SPI/LPC/fTPM TPM switch" description="To select. 0 - AMD CPU fTPM. 1 - LPC TPM. 2 - SPI TPM" size="1" offset="0x002F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="AMD CPU fTPM" value="0x00"/>
+    <option text="LPC TPM" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CHIPSET005" varstoreIndex="1" prompt="Onboard X550 LAN1" description="To Enable or Disable Onboard LAN" size="1" offset="0x01F9" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CHIPSET006" varstoreIndex="1" prompt="Onboard X550 LAN2" description="To Enable or Disable Onboard LAN" size="1" offset="0x01FA" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CHIPSET007" varstoreIndex="1" prompt="OCU1 Mode Selection" description="Switch OCU Link 1 to be PCIE or SATA" size="1" offset="0x01FB" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="PCIE" value="0x00"/>
+    <option text="SATA" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CHIPSET008" varstoreIndex="1" prompt="OCU2 Mode Selection" description="Switch OCU Link 2 to be PCIE or SATA" size="1" offset="0x01FC" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="PCIE" value="0x00"/>
+    <option text="SATA" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CHIPSET003" varstoreIndex="1" prompt="Restore AC Power Loss" description="Select the power state after a power failure. If [Power Off] is selected, the power will remain off when the power recovers. If [Power On] is selected, the system will start to boot up when the power recovers." size="1" offset="0x01E4" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Power Off" value="0x00"/>
+    <option text="Last State" value="0x01"/>
+    <option text="Power On" value="0x02"/>
+    <option text="No change" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="ACPI004" varstoreIndex="1" prompt="Enable ACPI Auto Configuration" description="Enables or Disables BIOS ACPI Auto Configuration." size="1" offset="0x0031" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="ACPI002" varstoreIndex="1" prompt="Enable Hibernation" description="Enables or Disables System ability to Hibernate (OS/S4 Sleep State). This option may not be effective with some operating systems." size="1" offset="0x0034" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="REDF000" varstoreIndex="1" prompt="Redfish" description="Enable/Disable AMI Redfish" size="1" offset="0x0037" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="REDF001" varstoreIndex="1" prompt="Authentication mode" description="Select authentication mode" size="1" offset="0x0078" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Basic Authentication" value="0x01"/>
+    <option text="Session Authentication" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="string" setupType="string" name="REDF002" varstoreIndex="1" prompt="IP address" description="Enter IP address" size="32" offset="0x0079" default="0x0000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x0000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="string" setupType="string" name="REDF003" varstoreIndex="1" prompt="IP Mask address" description="Enter IP Mask address" size="32" offset="0x0099" default="0x0000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x0000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="scalar" setupType="numeric" name="REDF004" varstoreIndex="1" prompt="IP Port" description="Enter IP Port" size="2" offset="0x00B9" default="0x0000" CurrentVal="0x0000">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB001" varstoreIndex="1" prompt="Onboard PCIE LAN PXE ROM" description="The Onboard PCIE LAN PXE ROM " size="1" offset="0x0142" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB022" varstoreIndex="1" prompt="CRB test" description="CRB test" size="1" offset="0x015F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB100" varstoreIndex="1" prompt=" Pcie Port Control" description="Disabled: Skip this page setup item, and use the default CRB setting" size="1" offset="0x0146" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB014" varstoreIndex="1" prompt="Device0" description="Enable/Disable/Auto, Auto used board default setting" size="1" offset="0x0147" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB070" varstoreIndex="1" prompt="  ASPM Mode Control" description="NB Root Port ASPM Mode Control" size="1" offset="0x014F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="L0s Entry" value="0x01"/>
+    <option text="L1 Entry" value="0x02"/>
+    <option text="L0s And L1 Entry" value="0x03"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB080" varstoreIndex="1" prompt="  Hotplug Mode Control" description="NB Root Port Hotplug Mode Control" size="1" offset="0x0157" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Hotplug Basic" value="0x01"/>
+    <option text="Hotplug Server" value="0x02"/>
+    <option text="Hotplug Enhanced" value="0x03"/>
+    <option text="Hotplug Inboard" value="0x04"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB015" varstoreIndex="1" prompt="Device1" description="Enable/Disable/Auto, Auto used board default setting" size="1" offset="0x0148" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB071" varstoreIndex="1" prompt="  ASPM Mode Control" description="NB Root Port ASPM Mode Control" size="1" offset="0x0150" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="L0s Entry" value="0x01"/>
+    <option text="L1 Entry" value="0x02"/>
+    <option text="L0s And L1 Entry" value="0x03"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB081" varstoreIndex="1" prompt="  Hotplug Mode Control" description="NB Root Port Hotplug Mode Control" size="1" offset="0x0158" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Hotplug Basic" value="0x01"/>
+    <option text="Hotplug Server" value="0x02"/>
+    <option text="Hotplug Enhanced" value="0x03"/>
+    <option text="Hotplug Inboard" value="0x04"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB016" varstoreIndex="1" prompt="Device2" description="Enable/Disable/Auto, Auto used board default setting" size="1" offset="0x0149" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB072" varstoreIndex="1" prompt="  ASPM Mode Control" description="NB Root Port ASPM Mode Control" size="1" offset="0x0151" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="L0s Entry" value="0x01"/>
+    <option text="L1 Entry" value="0x02"/>
+    <option text="L0s And L1 Entry" value="0x03"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB082" varstoreIndex="1" prompt="  Hotplug Mode Control" description="NB Root Port Hotplug Mode Control" size="1" offset="0x0159" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Hotplug Basic" value="0x01"/>
+    <option text="Hotplug Server" value="0x02"/>
+    <option text="Hotplug Enhanced" value="0x03"/>
+    <option text="Hotplug Inboard" value="0x04"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB017" varstoreIndex="1" prompt="Device3" description="Enable/Disable/Auto, Auto used board default setting" size="1" offset="0x014A" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB073" varstoreIndex="1" prompt="  ASPM Mode Control" description="NB Root Port ASPM Mode Control" size="1" offset="0x0152" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="L0s Entry" value="0x01"/>
+    <option text="L1 Entry" value="0x02"/>
+    <option text="L0s And L1 Entry" value="0x03"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB083" varstoreIndex="1" prompt="  Hotplug Mode Control" description="NB Root Port Hotplug Mode Control" size="1" offset="0x015A" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Hotplug Basic" value="0x01"/>
+    <option text="Hotplug Server" value="0x02"/>
+    <option text="Hotplug Enhanced" value="0x03"/>
+    <option text="Hotplug Inboard" value="0x04"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB018" varstoreIndex="1" prompt="Device4" description="Enable/Disable/Auto, Auto used board default setting" size="1" offset="0x014B" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB074" varstoreIndex="1" prompt="  ASPM Mode Control" description="NB Root Port ASPM Mode Control" size="1" offset="0x0153" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="L0s Entry" value="0x01"/>
+    <option text="L1 Entry" value="0x02"/>
+    <option text="L0s And L1 Entry" value="0x03"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB084" varstoreIndex="1" prompt="  Hotplug Mode Control" description="NB Root Port Hotplug Mode Control" size="1" offset="0x015B" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Hotplug Basic" value="0x01"/>
+    <option text="Hotplug Server" value="0x02"/>
+    <option text="Hotplug Enhanced" value="0x03"/>
+    <option text="Hotplug Inboard" value="0x04"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB019" varstoreIndex="1" prompt="Device5" description="Enable/Disable/Auto, Auto used board default setting" size="1" offset="0x014C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB075" varstoreIndex="1" prompt="  ASPM Mode Control" description="NB Root Port ASPM Mode Control" size="1" offset="0x0154" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="L0s Entry" value="0x01"/>
+    <option text="L1 Entry" value="0x02"/>
+    <option text="L0s And L1 Entry" value="0x03"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB085" varstoreIndex="1" prompt="  Hotplug Mode Control" description="NB Root Port Hotplug Mode Control" size="1" offset="0x015C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Hotplug Basic" value="0x01"/>
+    <option text="Hotplug Server" value="0x02"/>
+    <option text="Hotplug Enhanced" value="0x03"/>
+    <option text="Hotplug Inboard" value="0x04"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB020" varstoreIndex="1" prompt="Device6" description="Enable/Disable/Auto, Auto used board default setting" size="1" offset="0x014D" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB076" varstoreIndex="1" prompt="  ASPM Mode Control" description="NB Root Port ASPM Mode Control" size="1" offset="0x0155" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="L0s Entry" value="0x01"/>
+    <option text="L1 Entry" value="0x02"/>
+    <option text="L0s And L1 Entry" value="0x03"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB086" varstoreIndex="1" prompt="  Hotplug Mode Control" description="NB Root Port Hotplug Mode Control" size="1" offset="0x015D" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Hotplug Basic" value="0x01"/>
+    <option text="Hotplug Server" value="0x02"/>
+    <option text="Hotplug Enhanced" value="0x03"/>
+    <option text="Hotplug Inboard" value="0x04"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB021" varstoreIndex="1" prompt="Device7" description="Enable/Disable/Auto, Auto used board default setting" size="1" offset="0x014E" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB077" varstoreIndex="1" prompt="  ASPM Mode Control" description="NB Root Port ASPM Mode Control" size="1" offset="0x0156" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="L0s Entry" value="0x01"/>
+    <option text="L1 Entry" value="0x02"/>
+    <option text="L0s And L1 Entry" value="0x03"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CRB087" varstoreIndex="1" prompt="  Hotplug Mode Control" description="NB Root Port Hotplug Mode Control" size="1" offset="0x015E" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Hotplug Basic" value="0x01"/>
+    <option text="Hotplug Server" value="0x02"/>
+    <option text="Hotplug Enhanced" value="0x03"/>
+    <option text="Hotplug Inboard" value="0x04"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="GSIO201" varstoreIndex="3" prompt="Serial Port" description="Enable or Disable Serial Port (COM)" size="1" offset="0x0000" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SUPERIO001" varstoreIndex="3" prompt="Serial Port Address" description="Select an optimal settings for Super IO Device" size="1" offset="0x0001" default="0x02" CurrentVal="0x02">
+   <options>
+    <option text="3F8h/IRQ4" value="0x02"/>
+    <option text="3E8h/IRQ4" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="SUPERIO002" varstoreIndex="4" prompt="SOL Port" description="Enable or Disable SOL Port" size="1" offset="0x0000" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SUPERIO004" varstoreIndex="4" prompt="Serial Port Address" description="Select an optimal settings for Super IO Device" size="1" offset="0x0001" default="0x03" CurrentVal="0x03">
+   <options>
+    <option text="2F8h/IRQ3" value="0x03"/>
+    <option text="2E8h/IRQ3" value="0x05"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="TER001" varstoreIndex="1" prompt="Console Redirection" description="Console Redirection Enable or Disable." size="1" offset="0x016A" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="TER002" varstoreIndex="1" prompt="Console Redirection" description="Console Redirection Enable or Disable." size="1" offset="0x016B" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="TER010" varstoreIndex="1" prompt="Console Redirection EMS" description="Console Redirection Enable or Disable." size="1" offset="0x0178" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER06B" varstoreIndex="1" prompt="Out-of-Band Mgmt Port" description="Microsoft Windows Emergency Management Services (EMS) allows for remote management of a Windows Server OS through a serial port." size="1" offset="0x0179" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="COM1" value="0x00"/>
+    <option text="SOL" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER011" varstoreIndex="1" prompt="Terminal Type EMS" description="VT-UTF8 is the preferred terminal type for out-of-band management. The next best choice is VT100+ and then VT100. See above, in Console Redirection Settings page, for more Help with Terminal Type/Emulation." size="1" offset="0x017A" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="VT100" value="0x00"/>
+    <option text="VT100+" value="0x01"/>
+    <option text="VT-UTF8" value="0x02"/>
+    <option text="ANSI" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER0020" varstoreIndex="1" prompt="Bits per second EMS" description="Selects serial port transmission speed. The speed must be matched on the other side. Long or noisy lines may require lower speeds." size="1" offset="0x017B" default="0x03" CurrentVal="0x03">
+   <options>
+    <option text="9600" value="0x03"/>
+    <option text="19200" value="0x04"/>
+    <option text="57600" value="0x06"/>
+    <option text="115200" value="0x07"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER05C" varstoreIndex="1" prompt="Flow Control EMS" description="Flow control can prevent data loss from buffer overflow. When sending data, if the receiving buffers are full, a &amp;apos;stop&amp;apos; signal can be sent to stop the data flow. Once the buffers are empty, a &amp;apos;start&amp;apos; signal can be sent to re-start the flow. Hardware flow control uses two wires to send start/stop signals." size="1" offset="0x017C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="None" value="0x00"/>
+    <option text="Hardware RTS/CTS" value="0x01"/>
+    <option text="Software Xon/Xoff" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER0A8" varstoreIndex="1" prompt="Redirection COM Port" description="Select a COM port to display redirection of Legacy OS and Legacy OPROM Messages" size="1" offset="0x0180" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="COM1" value="0x00"/>
+    <option text="SOL" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER07A" varstoreIndex="1" prompt="Resolution" description="On Legacy OS, the Number of Rows and Columns supported redirection" size="1" offset="0x0174" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="80x24" value="0x00"/>
+    <option text="80x25" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER0A7" varstoreIndex="1" prompt="Redirect After POST" description="When Bootloader is selected, then Legacy Console Redirection is disabled before booting to legacy OS. When Always Enable is selected, then Legacy Console Redirection is enabled for legacy OS. Default setting for this option is set to Always Enable." size="1" offset="0x0177" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Always Enable" value="0x00"/>
+    <option text="BootLoader" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER012" varstoreIndex="1" prompt="Terminal Type" description="Emulation: ANSI: Extended ASCII char set. VT100: ASCII char set. VT100+: Extends VT100 to support color, function keys, etc. VT-UTF8: Uses UTF8 encoding to map Unicode chars onto 1 or more bytes." size="1" offset="0x016C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="VT100" value="0x00"/>
+    <option text="VT100+" value="0x01"/>
+    <option text="VT-UTF8" value="0x02"/>
+    <option text="ANSI" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER0021" varstoreIndex="1" prompt="Bits per second" description="Selects serial port transmission speed. The speed must be matched on the other side. Long or noisy lines may require lower speeds." size="1" offset="0x0160" default="0x03" CurrentVal="0x03">
+   <options>
+    <option text="9600" value="0x03"/>
+    <option text="19200" value="0x04"/>
+    <option text="38400" value="0x05"/>
+    <option text="57600" value="0x06"/>
+    <option text="115200" value="0x07"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER030" varstoreIndex="1" prompt="Data Bits" description="Data Bits" size="1" offset="0x0162" default="0x07" CurrentVal="0x07">
+   <options>
+    <option text="7" value="0x07"/>
+    <option text="8" value="0x08"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER03F" varstoreIndex="1" prompt="Parity" description="A parity bit can be sent with the data bits to detect some transmission errors. Even: parity bit is 0 if the num of 1&amp;apos;s in the data bits is even. Odd: parity bit is 0 if num of 1&amp;apos;s in the data bits is odd.  Mark: parity bit is always 1. Space: Parity bit is always 0. Mark and Space Parity do not allow for error detection. They can be used as an additional data bit." size="1" offset="0x0164" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="None" value="0x01"/>
+    <option text="Even" value="0x02"/>
+    <option text="Odd" value="0x03"/>
+    <option text="Mark" value="0x04"/>
+    <option text="Space" value="0x05"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER04E" varstoreIndex="1" prompt="Stop Bits" description="Stop bits indicate the end of a serial data packet. (A start bit indicates the beginning). The standard setting is 1 stop bit. Communication with slow devices may require more than 1 stop bit." size="1" offset="0x0166" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="1" value="0x01"/>
+    <option text="2" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER05D" varstoreIndex="1" prompt="Flow Control" description="Flow control can prevent data loss from buffer overflow. When sending data, if the receiving buffers are full, a &amp;apos;stop&amp;apos; signal can be sent to stop the data flow. Once the buffers are empty, a &amp;apos;start&amp;apos; signal can be sent to re-start the flow. Hardware flow control uses two wires to send start/stop signals." size="1" offset="0x0168" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="None" value="0x00"/>
+    <option text="Hardware RTS/CTS" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="TER07B" varstoreIndex="1" prompt="VT-UTF8 Combo Key Support" description="Enable VT-UTF8 Combination Key Support for ANSI/VT100 terminals" size="1" offset="0x016E" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="TER089" varstoreIndex="1" prompt="Recorder Mode" description="With this mode enabled only text will be sent. This is to capture Terminal data." size="1" offset="0x0170" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="TER06c" varstoreIndex="1" prompt="Resolution 100x31" description="Enables or disables extended terminal resolution" size="1" offset="0x0172" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER098" varstoreIndex="1" prompt="Putty KeyPad" description="Select FunctionKey and KeyPad on Putty." size="1" offset="0x0175" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="VT100" value="0x01"/>
+    <option text="LINUX" value="0x02"/>
+    <option text="XTERMR6" value="0x04"/>
+    <option text="SCO" value="0x08"/>
+    <option text="ESCN" value="0x10"/>
+    <option text="VT400" value="0x20"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER013" varstoreIndex="1" prompt="Terminal Type" description="Emulation: ANSI: Extended ASCII char set. VT100: ASCII char set. VT100+: Extends VT100 to support color, function keys, etc. VT-UTF8: Uses UTF8 encoding to map Unicode chars onto 1 or more bytes." size="1" offset="0x016D" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="VT100" value="0x00"/>
+    <option text="VT100+" value="0x01"/>
+    <option text="VT-UTF8" value="0x02"/>
+    <option text="ANSI" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER0022" varstoreIndex="1" prompt="Bits per second" description="Selects serial port transmission speed. The speed must be matched on the other side. Long or noisy lines may require lower speeds." size="1" offset="0x0161" default="0x03" CurrentVal="0x03">
+   <options>
+    <option text="9600" value="0x03"/>
+    <option text="19200" value="0x04"/>
+    <option text="38400" value="0x05"/>
+    <option text="57600" value="0x06"/>
+    <option text="115200" value="0x07"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER031" varstoreIndex="1" prompt="Data Bits" description="Data Bits" size="1" offset="0x0163" default="0x07" CurrentVal="0x07">
+   <options>
+    <option text="7" value="0x07"/>
+    <option text="8" value="0x08"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER040" varstoreIndex="1" prompt="Parity" description="A parity bit can be sent with the data bits to detect some transmission errors. Even: parity bit is 0 if the num of 1&amp;apos;s in the data bits is even. Odd: parity bit is 0 if num of 1&amp;apos;s in the data bits is odd.  Mark: parity bit is always 1. Space: Parity bit is always 0. Mark and Space Parity do not allow for error detection. They can be used as an additional data bit." size="1" offset="0x0165" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="None" value="0x01"/>
+    <option text="Even" value="0x02"/>
+    <option text="Odd" value="0x03"/>
+    <option text="Mark" value="0x04"/>
+    <option text="Space" value="0x05"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER04F" varstoreIndex="1" prompt="Stop Bits" description="Stop bits indicate the end of a serial data packet. (A start bit indicates the beginning). The standard setting is 1 stop bit. Communication with slow devices may require more than 1 stop bit." size="1" offset="0x0167" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="1" value="0x01"/>
+    <option text="2" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER05E" varstoreIndex="1" prompt="Flow Control" description="Flow control can prevent data loss from buffer overflow. When sending data, if the receiving buffers are full, a &amp;apos;stop&amp;apos; signal can be sent to stop the data flow. Once the buffers are empty, a &amp;apos;start&amp;apos; signal can be sent to re-start the flow. Hardware flow control uses two wires to send start/stop signals." size="1" offset="0x0169" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="None" value="0x00"/>
+    <option text="Hardware RTS/CTS" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="TER07C" varstoreIndex="1" prompt="VT-UTF8 Combo Key Support" description="Enable VT-UTF8 Combination Key Support for ANSI/VT100 terminals" size="1" offset="0x016F" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="TER08A" varstoreIndex="1" prompt="Recorder Mode" description="With this mode enabled only text will be sent. This is to capture Terminal data." size="1" offset="0x0171" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="TER06D" varstoreIndex="1" prompt="Resolution 100x31" description="Enables or disables extended terminal resolution" size="1" offset="0x0173" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="TER099" varstoreIndex="1" prompt="Putty KeyPad" description="Select FunctionKey and KeyPad on Putty." size="1" offset="0x0176" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="VT100" value="0x01"/>
+    <option text="LINUX" value="0x02"/>
+    <option text="XTERMR6" value="0x04"/>
+    <option text="SCO" value="0x08"/>
+    <option text="ESCN" value="0x10"/>
+    <option text="VT400" value="0x20"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU001" varstoreIndex="1" prompt="PSS Support" description="Enable/disable the generation of ACPI _PPC, _PSS, and _PCT objects." size="1" offset="0x0181" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU003" varstoreIndex="1" prompt="PPC Adjustment" description="Provide to adjust _PPC object." size="1" offset="0x0183" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="PState 0" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU003" varstoreIndex="1" prompt="PPC Adjustment" description="Provide to adjust _PPC object." size="1" offset="0x0183" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="PState 0" value="0x00"/>
+    <option text="PState 1" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU003" varstoreIndex="1" prompt="PPC Adjustment" description="Provide to adjust _PPC object." size="1" offset="0x0183" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="PState 0" value="0x00"/>
+    <option text="PState 1" value="0x01"/>
+    <option text="PState 2" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU003" varstoreIndex="1" prompt="PPC Adjustment" description="Provide to adjust _PPC object." size="1" offset="0x0183" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="PState 0" value="0x00"/>
+    <option text="PState 1" value="0x01"/>
+    <option text="PState 2" value="0x02"/>
+    <option text="PState 3" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU003" varstoreIndex="1" prompt="PPC Adjustment" description="Provide to adjust _PPC object." size="1" offset="0x0183" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="PState 0" value="0x00"/>
+    <option text="PState 1" value="0x01"/>
+    <option text="PState 2" value="0x02"/>
+    <option text="PState 3" value="0x03"/>
+    <option text="PState 4" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU003" varstoreIndex="1" prompt="PPC Adjustment" description="Provide to adjust _PPC object." size="1" offset="0x0183" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="PState 0" value="0x00"/>
+    <option text="PState 1" value="0x01"/>
+    <option text="PState 2" value="0x02"/>
+    <option text="PState 3" value="0x03"/>
+    <option text="PState 4" value="0x04"/>
+    <option text="PState 5" value="0x05"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU003" varstoreIndex="1" prompt="PPC Adjustment" description="Provide to adjust _PPC object." size="1" offset="0x0183" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="PState 0" value="0x00"/>
+    <option text="PState 1" value="0x01"/>
+    <option text="PState 2" value="0x02"/>
+    <option text="PState 3" value="0x03"/>
+    <option text="PState 4" value="0x04"/>
+    <option text="PState 5" value="0x05"/>
+    <option text="PState 6" value="0x06"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU003" varstoreIndex="1" prompt="PPC Adjustment" description="Provide to adjust _PPC object." size="1" offset="0x0183" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="PState 0" value="0x00"/>
+    <option text="PState 1" value="0x01"/>
+    <option text="PState 2" value="0x02"/>
+    <option text="PState 3" value="0x03"/>
+    <option text="PState 4" value="0x04"/>
+    <option text="PState 5" value="0x05"/>
+    <option text="PState 6" value="0x06"/>
+    <option text="PState 7" value="0x07"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU004" varstoreIndex="1" prompt="NX Mode" description="Enable/disable No-execute page protection Function" size="1" offset="0x0185" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU005" varstoreIndex="1" prompt="SVM Mode" description="Enable/disable CPU Virtualization" size="1" offset="0x0184" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GOPP001" varstoreIndex="1" prompt="Output Select" description="Output Interface" size="1" offset="0x01AE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Unknown Device" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GOPP001" varstoreIndex="1" prompt="Output Select" description="Output Interface" size="1" offset="0x01AE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Unknown Device" value="0x00"/>
+    <option text="Unknown Device" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GOPP001" varstoreIndex="1" prompt="Output Select" description="Output Interface" size="1" offset="0x01AE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Unknown Device" value="0x00"/>
+    <option text="Unknown Device" value="0x01"/>
+    <option text="Unknown Device" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GOPP001" varstoreIndex="1" prompt="Output Select" description="Output Interface" size="1" offset="0x01AE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Unknown Device" value="0x00"/>
+    <option text="Unknown Device" value="0x01"/>
+    <option text="Unknown Device" value="0x02"/>
+    <option text="Unknown Device" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GOPP001" varstoreIndex="1" prompt="Output Select" description="Output Interface" size="1" offset="0x01AE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Unknown Device" value="0x00"/>
+    <option text="Unknown Device" value="0x01"/>
+    <option text="Unknown Device" value="0x02"/>
+    <option text="Unknown Device" value="0x03"/>
+    <option text="Unknown Device" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GOPP001" varstoreIndex="1" prompt="Output Select" description="Output Interface" size="1" offset="0x01AE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Unknown Device" value="0x00"/>
+    <option text="Unknown Device" value="0x01"/>
+    <option text="Unknown Device" value="0x02"/>
+    <option text="Unknown Device" value="0x03"/>
+    <option text="Unknown Device" value="0x04"/>
+    <option text="Unknown Device" value="0x05"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GOPP001" varstoreIndex="1" prompt="Output Select" description="Output Interface" size="1" offset="0x01AE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Unknown Device" value="0x00"/>
+    <option text="Unknown Device" value="0x01"/>
+    <option text="Unknown Device" value="0x02"/>
+    <option text="Unknown Device" value="0x03"/>
+    <option text="Unknown Device" value="0x04"/>
+    <option text="Unknown Device" value="0x05"/>
+    <option text="Unknown Device" value="0x06"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GOPP001" varstoreIndex="1" prompt="Output Select" description="Output Interface" size="1" offset="0x01AE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Unknown Device" value="0x00"/>
+    <option text="Unknown Device" value="0x01"/>
+    <option text="Unknown Device" value="0x02"/>
+    <option text="Unknown Device" value="0x03"/>
+    <option text="Unknown Device" value="0x04"/>
+    <option text="Unknown Device" value="0x05"/>
+    <option text="Unknown Device" value="0x06"/>
+    <option text="Unknown Device" value="0x07"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="DBG002" varstoreIndex="1" prompt="Debug Port Table" description="Debug Port Table" size="1" offset="0x01AF" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="DBG003" varstoreIndex="1" prompt="Debug Port Table 2" description="Debug Port Table 2" size="1" offset="0x01B0" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="GSIO020" varstoreIndex="5" prompt="Lock Legacy Resources" description="Enables or Disables Lock of Legacy Resources" size="1" offset="0x0000" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB000" varstoreIndex="6" prompt="USB Support" description="USB Support Parameters" size="1" offset="0x0000" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB002" varstoreIndex="6" prompt="Legacy USB Support" description="Enables Legacy USB support. AUTO option disables legacy support if no USB devices are connected. DISABLE option will keep USB devices available only for EFI applications." size="1" offset="0x0001" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Enabled" value="0x00"/>
+    <option text="UEFI Setup Only" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB00E" varstoreIndex="6" prompt="USB 2.0 Controller Mode" description="Configures the USB 2.0 controller in HiSpeed (480Mbps) or FullSpeed (12Mbps)." size="1" offset="0x002E" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="HiSpeed" value="0x01"/>
+    <option text="FullSpeed" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB001" varstoreIndex="6" prompt="Legacy USB 3.0 Support" description="Enable or disable Legacy OS Support for USB 3.0 devices." size="1" offset="0x002A" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB003" varstoreIndex="6" prompt="XHCI Hand-off" description="This is a workaround for OSes without XHCI hand-off support. The XHCI ownership change should be claimed by XHCI driver." size="1" offset="0x002B" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB004" varstoreIndex="6" prompt="EHCI Hand-off" description="This is a workaround for OSes without EHCI hand-off support. The EHCI ownership change should be claimed by EHCI driver." size="1" offset="0x0002" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB00F" varstoreIndex="6" prompt="USB Mass Storage Driver Support" description="Enable/Disable USB Mass Storage Driver Support." size="1" offset="0x002F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB00D" varstoreIndex="6" prompt="Port 60/64 Emulation" description="Enables I/O port 60h/64h emulation support. This should be enabled for the complete USB keyboard legacy support for non-USB aware OSes." size="1" offset="0x0007" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB00A" varstoreIndex="6" prompt="USB transfer time-out" description="The time-out value for Control, Bulk, and Interrupt transfers." size="1" offset="0x0009" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="1 sec" value="0x01"/>
+    <option text="5 sec" value="0x05"/>
+    <option text="10 sec" value="0x0A"/>
+    <option text="20 sec" value="0x14"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB009" varstoreIndex="6" prompt="Device reset time-out" description="USB mass storage device Start Unit command time-out." size="1" offset="0x0008" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="10 sec" value="0x00"/>
+    <option text="20 sec" value="0x01"/>
+    <option text="30 sec" value="0x02"/>
+    <option text="40 sec" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB00B" varstoreIndex="6" prompt="Device power-up delay" description="Maximum time the device will take before it properly reports itself to the Host Controller. &amp;apos;Auto&amp;apos; uses default value: for a Root port it is 100 ms, for a Hub port the delay is taken from Hub descriptor." size="1" offset="0x002C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Manual" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="numeric" name="USB00C" varstoreIndex="6" prompt="Device power-up delay in seconds" description="Delay range is 1..40 seconds, in one second increments" size="1" offset="0x002D" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB011" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x000A" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB012" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x000B" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB013" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x000C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB014" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x000D" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB015" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x000E" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB016" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x000F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB017" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0010" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB018" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0011" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB019" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0012" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB01A" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0013" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB01B" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0014" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB01C" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0015" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB01D" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0016" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB01E" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0017" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB01F" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0018" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB020" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0019" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB021" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x001A" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB022" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x001B" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB023" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x001C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB024" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x001D" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB025" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x001E" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB026" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x001F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB027" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0020" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB028" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0021" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB029" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0022" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB02A" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0023" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB02B" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0024" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB02C" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0025" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB02D" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0026" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB02E" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0027" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB02F" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0028" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB030" varstoreIndex="6" prompt="N/A" description="Mass storage device emulation type. &amp;apos;AUTO&amp;apos; enumerates devices according to their media format. Optical drives are emulated as &amp;apos;CDROM&amp;apos;, drives with no media will be emulated according to a drive type." size="1" offset="0x0029" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="Floppy" value="0x01"/>
+    <option text="Forced FDD" value="0x02"/>
+    <option text="Hard Disk" value="0x03"/>
+    <option text="CD-ROM" value="0x04"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="NWSK000" varstoreIndex="7" prompt="Network Stack" description="Enable/Disable UEFI Network Stack" size="1" offset="0x0000" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="NWSK001" varstoreIndex="7" prompt="IPv4 PXE Support" description="Enable/Disable IPv4 PXE boot support. If disabled, IPv4 PXE boot support will not be available." size="1" offset="0x0001" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="NWSK006" varstoreIndex="7" prompt="IPv4 HTTP Support" description="Enable/Disable IPv4 HTTP boot support. If disabled, IPv4 HTTP boot support will not be available." size="1" offset="0x0006" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="NWSK002" varstoreIndex="7" prompt="IPv6 PXE Support" description="Enable/Disable IPv6 PXE boot support. If disabled, IPv6 PXE boot support will not be available." size="1" offset="0x0002" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="NWSK007" varstoreIndex="7" prompt="IPv6 HTTP Support" description="Enable/Disable IPv6 HTTP boot support. If disabled, IPv6 HTTP boot support will not be available." size="1" offset="0x0007" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="numeric" name="NWSK004" varstoreIndex="7" prompt="PXE boot wait time" description="Wait time in seconds to press ESC key to abort the PXE boot. Use either +/- or numeric keys to set the value." size="1" offset="0x0004" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="numeric" name="NWSK005" varstoreIndex="7" prompt="Media detect count" description="Number of times the presence of media will be checked. Use either +/- or numeric keys to set the value." size="1" offset="0x0005" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CSM002" varstoreIndex="1" prompt="GateA20 Active" description="UPON REQUEST - GA20 can be disabled using BIOS services. ALWAYS - do not allow disabling GA20; this option is useful when any RT code is executed above 1MB." size="1" offset="0x01B6" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Upon Request" value="0x00"/>
+    <option text="Always" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CSM001" varstoreIndex="1" prompt="INT19 Trap Response" description="BIOS reaction on INT19 trapping by Option ROM: IMMEDIATE - execute the trap right away; POSTPONED - execute the trap during legacy boot." size="1" offset="0x01B3" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Immediate" value="0x01"/>
+    <option text="Postponed" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CSM011" varstoreIndex="1" prompt="HDD Connection Order" description="Some OS require HDD handles to be adjusted, i.e. OS is installed on drive 80h." size="1" offset="0x01B5" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Adjust" value="0x00"/>
+    <option text="Keep" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CSM010" varstoreIndex="1" prompt="Other PCI device ROM priority" description="For PCI devices other than Network, Mass storage or Video defines which OpROM to launch" size="1" offset="0x01BB" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Do not launch" value="0x00"/>
+    <option text="UEFI only" value="0x01"/>
+    <option text="Legacy only" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="ASRRACPI000" varstoreIndex="1" prompt="PCIE Devices Power On" description="Allow the system to be waked up by a PCIE device and enable wake on LAN." size="1" offset="0x01BD" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="ASRRACPI001" varstoreIndex="1" prompt="RTC Alarm Power On" description="Allow the system to be waked up by the real time clock alarm. Set it to By OS to let it be handled by your operating system." size="1" offset="0x01BF" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="By OS" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="ASRRACPI002" varstoreIndex="1" prompt="  RTC Alarm Date" description="Set Date of RTC power on feature." size="1" offset="0x01C0" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Every Day" value="0x00"/>
+    <option text="1" value="0x01"/>
+    <option text="2" value="0x02"/>
+    <option text="3" value="0x03"/>
+    <option text="4" value="0x04"/>
+    <option text="5" value="0x05"/>
+    <option text="6" value="0x06"/>
+    <option text="7" value="0x07"/>
+    <option text="8" value="0x08"/>
+    <option text="9" value="0x09"/>
+    <option text="10" value="0x0A"/>
+    <option text="11" value="0x0B"/>
+    <option text="12" value="0x0C"/>
+    <option text="13" value="0x0D"/>
+    <option text="14" value="0x0E"/>
+    <option text="15" value="0x0F"/>
+    <option text="16" value="0x10"/>
+    <option text="17" value="0x11"/>
+    <option text="18" value="0x12"/>
+    <option text="19" value="0x13"/>
+    <option text="20" value="0x14"/>
+    <option text="21" value="0x15"/>
+    <option text="22" value="0x16"/>
+    <option text="23" value="0x17"/>
+    <option text="24" value="0x18"/>
+    <option text="25" value="0x19"/>
+    <option text="26" value="0x1A"/>
+    <option text="27" value="0x1B"/>
+    <option text="28" value="0x1C"/>
+    <option text="29" value="0x1D"/>
+    <option text="30" value="0x1E"/>
+    <option text="31" value="0x1F"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="ASRRACPI003" varstoreIndex="1" prompt="  RTC Alarm Hour" description="Set Hour of RTC power on feature." size="1" offset="0x01C1" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="0" value="0x00"/>
+    <option text="1" value="0x01"/>
+    <option text="2" value="0x02"/>
+    <option text="3" value="0x03"/>
+    <option text="4" value="0x04"/>
+    <option text="5" value="0x05"/>
+    <option text="6" value="0x06"/>
+    <option text="7" value="0x07"/>
+    <option text="8" value="0x08"/>
+    <option text="9" value="0x09"/>
+    <option text="10" value="0x0A"/>
+    <option text="11" value="0x0B"/>
+    <option text="12" value="0x0C"/>
+    <option text="13" value="0x0D"/>
+    <option text="14" value="0x0E"/>
+    <option text="15" value="0x0F"/>
+    <option text="16" value="0x10"/>
+    <option text="17" value="0x11"/>
+    <option text="18" value="0x12"/>
+    <option text="19" value="0x13"/>
+    <option text="20" value="0x14"/>
+    <option text="21" value="0x15"/>
+    <option text="22" value="0x16"/>
+    <option text="23" value="0x17"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="ASRRACPI004" varstoreIndex="1" prompt="  RTC Alarm Minute" description="Set Minute of RTC power on feature." size="1" offset="0x01C2" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="0" value="0x00"/>
+    <option text="1" value="0x01"/>
+    <option text="2" value="0x02"/>
+    <option text="3" value="0x03"/>
+    <option text="4" value="0x04"/>
+    <option text="5" value="0x05"/>
+    <option text="6" value="0x06"/>
+    <option text="7" value="0x07"/>
+    <option text="8" value="0x08"/>
+    <option text="9" value="0x09"/>
+    <option text="10" value="0x0A"/>
+    <option text="11" value="0x0B"/>
+    <option text="12" value="0x0C"/>
+    <option text="13" value="0x0D"/>
+    <option text="14" value="0x0E"/>
+    <option text="15" value="0x0F"/>
+    <option text="16" value="0x10"/>
+    <option text="17" value="0x11"/>
+    <option text="18" value="0x12"/>
+    <option text="19" value="0x13"/>
+    <option text="20" value="0x14"/>
+    <option text="21" value="0x15"/>
+    <option text="22" value="0x16"/>
+    <option text="23" value="0x17"/>
+    <option text="24" value="0x18"/>
+    <option text="25" value="0x19"/>
+    <option text="26" value="0x1A"/>
+    <option text="27" value="0x1B"/>
+    <option text="28" value="0x1C"/>
+    <option text="29" value="0x1D"/>
+    <option text="30" value="0x1E"/>
+    <option text="31" value="0x1F"/>
+    <option text="32" value="0x20"/>
+    <option text="33" value="0x21"/>
+    <option text="34" value="0x22"/>
+    <option text="35" value="0x23"/>
+    <option text="36" value="0x24"/>
+    <option text="37" value="0x25"/>
+    <option text="38" value="0x26"/>
+    <option text="39" value="0x27"/>
+    <option text="40" value="0x28"/>
+    <option text="41" value="0x29"/>
+    <option text="42" value="0x2A"/>
+    <option text="43" value="0x2B"/>
+    <option text="44" value="0x2C"/>
+    <option text="45" value="0x2D"/>
+    <option text="46" value="0x2E"/>
+    <option text="47" value="0x2F"/>
+    <option text="48" value="0x30"/>
+    <option text="49" value="0x31"/>
+    <option text="50" value="0x32"/>
+    <option text="51" value="0x33"/>
+    <option text="52" value="0x34"/>
+    <option text="53" value="0x35"/>
+    <option text="54" value="0x36"/>
+    <option text="55" value="0x37"/>
+    <option text="56" value="0x38"/>
+    <option text="57" value="0x39"/>
+    <option text="58" value="0x3A"/>
+    <option text="59" value="0x3B"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="ASRRACPI005" varstoreIndex="1" prompt="  RTC Alarm Second" description="Set Second of RTC power on feature." size="1" offset="0x01C3" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="0" value="0x00"/>
+    <option text="1" value="0x01"/>
+    <option text="2" value="0x02"/>
+    <option text="3" value="0x03"/>
+    <option text="4" value="0x04"/>
+    <option text="5" value="0x05"/>
+    <option text="6" value="0x06"/>
+    <option text="7" value="0x07"/>
+    <option text="8" value="0x08"/>
+    <option text="9" value="0x09"/>
+    <option text="10" value="0x0A"/>
+    <option text="11" value="0x0B"/>
+    <option text="12" value="0x0C"/>
+    <option text="13" value="0x0D"/>
+    <option text="14" value="0x0E"/>
+    <option text="15" value="0x0F"/>
+    <option text="16" value="0x10"/>
+    <option text="17" value="0x11"/>
+    <option text="18" value="0x12"/>
+    <option text="19" value="0x13"/>
+    <option text="20" value="0x14"/>
+    <option text="21" value="0x15"/>
+    <option text="22" value="0x16"/>
+    <option text="23" value="0x17"/>
+    <option text="24" value="0x18"/>
+    <option text="25" value="0x19"/>
+    <option text="26" value="0x1A"/>
+    <option text="27" value="0x1B"/>
+    <option text="28" value="0x1C"/>
+    <option text="29" value="0x1D"/>
+    <option text="30" value="0x1E"/>
+    <option text="31" value="0x1F"/>
+    <option text="32" value="0x20"/>
+    <option text="33" value="0x21"/>
+    <option text="34" value="0x22"/>
+    <option text="35" value="0x23"/>
+    <option text="36" value="0x24"/>
+    <option text="37" value="0x25"/>
+    <option text="38" value="0x26"/>
+    <option text="39" value="0x27"/>
+    <option text="40" value="0x28"/>
+    <option text="41" value="0x29"/>
+    <option text="42" value="0x2A"/>
+    <option text="43" value="0x2B"/>
+    <option text="44" value="0x2C"/>
+    <option text="45" value="0x2D"/>
+    <option text="46" value="0x2E"/>
+    <option text="47" value="0x2F"/>
+    <option text="48" value="0x30"/>
+    <option text="49" value="0x31"/>
+    <option text="50" value="0x32"/>
+    <option text="51" value="0x33"/>
+    <option text="52" value="0x34"/>
+    <option text="53" value="0x35"/>
+    <option text="54" value="0x36"/>
+    <option text="55" value="0x37"/>
+    <option text="56" value="0x38"/>
+    <option text="57" value="0x39"/>
+    <option text="58" value="0x3A"/>
+    <option text="59" value="0x3B"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CHIPSET009" varstoreIndex="1" prompt="SATA Mode" description="Select SATA Mode" size="1" offset="0x00C1" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="RAID" value="0x01"/>
+    <option text="AHCI" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB200" varstoreIndex="1" prompt="SATA Hot Plug" description="Enable/disable the SATA Hot Plug Function." size="1" offset="0x0100" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB201" varstoreIndex="1" prompt="SATA Port Enable" description="Enable/disable the SATA Controllers of Fch" size="1" offset="0x0101" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="USB002" varstoreIndex="6" prompt="Legacy USB Support" description="Enables Legacy USB support. AUTO option disables legacy support if no USB devices are connected. DISABLE option will keep USB devices available only for EFI applications." size="1" offset="0x0001" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Enabled" value="0x00"/>
+    <option text="UEFI Setup Only" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00I" varstoreIndex="1" prompt="SATA Controller(s)" description="Enable/disable the SATA controllers." size="1" offset="0x00C0" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CHIPSET009" varstoreIndex="1" prompt="SATA Mode" description="Select SATA Mode" size="1" offset="0x00C1" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="RAID" value="0x01"/>
+    <option text="AHCI" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB035" varstoreIndex="1" prompt="RAID Type" description="RAID Or RAID5" size="1" offset="0x00C2" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="RAID" value="0x00"/>
+    <option text="RAID5" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB085" varstoreIndex="1" prompt="XHCI Controller 1" description="XHCI Enable Help" size="1" offset="0x00C5" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00G" varstoreIndex="1" prompt="XHCI0 Port 0 " description="Bristol:Enabled/Disabled XHCI Port 0; Summit:Disable XHCI Port0, Port1-3 all disabled " size="1" offset="0x00CE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00H" varstoreIndex="1" prompt="XHCI0 Port 1 " description="Enabled/Disabled XHCI0 Port 1(XHCI/EHCI) " size="1" offset="0x00CF" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB061" varstoreIndex="1" prompt="XHCI0 Port 2" description="Enabled/Disabled XHCI0 Port 2(XHCI/EHCI)" size="1" offset="0x00D0" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB062" varstoreIndex="1" prompt="XHCI0 Port 3" description="Enabled/Disabled XHCI0 Port 3(XHCI/EHCI)" size="1" offset="0x00D1" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB002" varstoreIndex="1" prompt="EHCI HC(Bus 0 Dev 18 Fn 0)" description="EHCI1 Controller Enable" size="1" offset="0x00C7" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB006" varstoreIndex="1" prompt="USB Internal Port 0 " description="Enabled/Disabled USB Internal Port 0 " size="1" offset="0x00C8" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB050" varstoreIndex="1" prompt="  HUB Port 0 " description="Enabled/Disabled HUB Port 0 " size="1" offset="0x00CA" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB051" varstoreIndex="1" prompt="  HUB Port 1 " description="Enabled/Disabled HUB Port 1 " size="1" offset="0x00CB" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB052" varstoreIndex="1" prompt="  HUB Port 2 " description="Enabled/Disabled HUB Port 2 " size="1" offset="0x00CC" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB053" varstoreIndex="1" prompt="  HUB Port 3 " description="Enabled/Disabled HUB Port 3 " size="1" offset="0x00CD" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB007" varstoreIndex="1" prompt="USB Internal Port 1 " description="Enabled/Disabled USB Internal Port 1 " size="1" offset="0x00C9" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00G" varstoreIndex="1" prompt="XHCI0 Port 0 " description="Bristol:Enabled/Disabled XHCI Port 0; Summit:Disable XHCI Port0, Port1-3 all disabled " size="1" offset="0x00CE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00H" varstoreIndex="1" prompt="XHCI0 Port 1 " description="Enabled/Disabled XHCI0 Port 1(XHCI/EHCI) " size="1" offset="0x00CF" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB061" varstoreIndex="1" prompt="XHCI0 Port 2" description="Enabled/Disabled XHCI0 Port 2(XHCI/EHCI)" size="1" offset="0x00D0" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB062" varstoreIndex="1" prompt="XHCI0 Port 3" description="Enabled/Disabled XHCI0 Port 3(XHCI/EHCI)" size="1" offset="0x00D1" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00G" varstoreIndex="1" prompt="XHCI0 Port 0 " description="Bristol:Enabled/Disabled XHCI Port 0; Summit:Disable XHCI Port0, Port1-3 all disabled " size="1" offset="0x00CE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00H" varstoreIndex="1" prompt="XHCI0 Port 1 " description="Enabled/Disabled XHCI0 Port 1(XHCI/EHCI) " size="1" offset="0x00CF" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB061" varstoreIndex="1" prompt="XHCI0 Port 2" description="Enabled/Disabled XHCI0 Port 2(XHCI/EHCI)" size="1" offset="0x00D0" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB062" varstoreIndex="1" prompt="XHCI0 Port 3" description="Enabled/Disabled XHCI0 Port 3(XHCI/EHCI)" size="1" offset="0x00D1" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB086" varstoreIndex="1" prompt="XHCI1 Port 0 " description="Enabled/Disabled XHCI1 Port 0(XHCI/EHCI) " size="1" offset="0x00D4" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB087" varstoreIndex="1" prompt="XHCI1 Port 1 " description="Enabled/Disabled XHCI1 Port 1(XHCI/EHCI) " size="1" offset="0x00D5" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00G" varstoreIndex="1" prompt="XHCI0 Port 0 " description="Bristol:Enabled/Disabled XHCI Port 0; Summit:Disable XHCI Port0, Port1-3 all disabled " size="1" offset="0x00CE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00H" varstoreIndex="1" prompt="XHCI0 Port 1 " description="Enabled/Disabled XHCI0 Port 1(XHCI/EHCI) " size="1" offset="0x00CF" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB061" varstoreIndex="1" prompt="XHCI0 Port 2" description="Enabled/Disabled XHCI0 Port 2(XHCI/EHCI)" size="1" offset="0x00D0" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB062" varstoreIndex="1" prompt="XHCI0 Port 3" description="Enabled/Disabled XHCI0 Port 3(XHCI/EHCI)" size="1" offset="0x00D1" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB097" varstoreIndex="1" prompt="XHCI0 Port 4" description="Enabled/Disabled XHCI0 Port 4(XHCI/EHCI)" size="1" offset="0x00D2" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB098" varstoreIndex="1" prompt="XHCI0 Port 5" description="Enabled/Disabled XHCI0 Port 5(XHCI/EHCI)" size="1" offset="0x00D3" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00G" varstoreIndex="1" prompt="XHCI0 Port 0 " description="Bristol:Enabled/Disabled XHCI Port 0; Summit:Disable XHCI Port0, Port1-3 all disabled " size="1" offset="0x00CE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00H" varstoreIndex="1" prompt="XHCI0 Port 1 " description="Enabled/Disabled XHCI0 Port 1(XHCI/EHCI) " size="1" offset="0x00CF" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB061" varstoreIndex="1" prompt="XHCI0 Port 2" description="Enabled/Disabled XHCI0 Port 2(XHCI/EHCI)" size="1" offset="0x00D0" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB062" varstoreIndex="1" prompt="XHCI0 Port 3" description="Enabled/Disabled XHCI0 Port 3(XHCI/EHCI)" size="1" offset="0x00D1" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00G" varstoreIndex="1" prompt="XHCI0 Port 0 " description="Bristol:Enabled/Disabled XHCI Port 0; Summit:Disable XHCI Port0, Port1-3 all disabled " size="1" offset="0x00CE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00H" varstoreIndex="1" prompt="XHCI0 Port 1 " description="Enabled/Disabled XHCI0 Port 1(XHCI/EHCI) " size="1" offset="0x00CF" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB086" varstoreIndex="1" prompt="XHCI1 Port 0 " description="Enabled/Disabled XHCI1 Port 0(XHCI/EHCI) " size="1" offset="0x00D4" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB087" varstoreIndex="1" prompt="XHCI1 Port 1 " description="Enabled/Disabled XHCI1 Port 1(XHCI/EHCI) " size="1" offset="0x00D5" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01T" varstoreIndex="1" prompt="IR Config" description="Infrared (IR) Configuration" size="1" offset="0x00D7" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="RX &amp;amp; TX0 Only" value="0x01"/>
+    <option text="RX &amp;amp; TX1 Only" value="0x02"/>
+    <option text="RX, TX0, And TX1" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB036" varstoreIndex="1" prompt="SD Mode" description="SD Mode Configuration" size="1" offset="0x00D8" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Ver2.0" value="0x01"/>
+    <option text="Ver3.0" value="0x02"/>
+    <option text="V3_SDR50" value="0x03"/>
+    <option text="V3_SDR104" value="0x04"/>
+    <option text="V3_DDR50" value="0x05"/>
+    <option text="SdDump" value="0x06"/>
+    <option text="Auto(Ver2.0+Low speed)" value="0x0F"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB100" varstoreIndex="1" prompt="SdForce18 Enable" description="Enable SdForce18" size="1" offset="0x00DD" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB101" varstoreIndex="1" prompt="SD Mode configuration" description="SD Mode" size="1" offset="0x00DE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="AMDA" value="0x00"/>
+    <option text="DMA" value="0x01"/>
+    <option text="PIO" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB056" varstoreIndex="1" prompt="Uart 0 Enable" description="Uart 0 Enable" size="1" offset="0x00E4" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB057" varstoreIndex="1" prompt="Uart 1 Enable" description="Uart 1 Enable" size="1" offset="0x00E5" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SBF52" varstoreIndex="1" prompt="I2C 0 Enable" description="I2C 0 Enable" size="1" offset="0x00E0" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SBF53" varstoreIndex="1" prompt="I2C 1 Enable" description="I2C 1 Enable" size="1" offset="0x00E1" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB054" varstoreIndex="1" prompt="I2C 2 Enable" description="I2C 2 Enable" size="1" offset="0x00E2" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB055" varstoreIndex="1" prompt="I2C 3 Enable" description="I2C 3 Enable" size="1" offset="0x00E3" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01E" varstoreIndex="1" prompt="AB Clock Gating" description="Enable/Disable AB Internal Clock Gating" size="1" offset="0x00E6" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01F" varstoreIndex="1" prompt="PCIB Clock Run" description="Enable The Auto Clkrun Functionality" size="1" offset="0x00E7" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01D" varstoreIndex="1" prompt="Restore On AC Power Loss" description="Restore Status On AC Power Loss" size="1" offset="0x013E" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Power On" value="0x01"/>
+    <option text="Power Off" value="0x02"/>
+    <option text="Last State" value="0x03"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB083" varstoreIndex="1" prompt="GPIO Devices Support" description="Enable/Disable GPIO ACPI Devices Support, disable it will disable i2C and uart interface device." size="1" offset="0x00DF" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00N" varstoreIndex="1" prompt="ESATA Port On Port 0" description=" SATA Port X Support ESATA Enabled/Disabled" size="1" offset="0x00E8" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00O" varstoreIndex="1" prompt="ESATA Port On Port 1" description=" SATA Port X Support ESATA Enabled/Disabled" size="1" offset="0x00E9" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00P" varstoreIndex="1" prompt="ESATA Port On Port 2" description=" SATA Port X Support ESATA Enabled/Disabled" size="1" offset="0x00EA" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00Q" varstoreIndex="1" prompt="ESATA Port On Port 3" description=" SATA Port X Support ESATA Enabled/Disabled" size="1" offset="0x00EB" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00R" varstoreIndex="1" prompt="ESATA Port On Port 4" description=" SATA Port X Support ESATA Enabled/Disabled" size="1" offset="0x00EC" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00S" varstoreIndex="1" prompt="ESATA Port On Port 5" description=" SATA Port X Support ESATA Enabled/Disabled" size="1" offset="0x00ED" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00T" varstoreIndex="1" prompt="ESATA Port On Port 6" description=" SATA Port X Support ESATA Enabled/Disabled" size="1" offset="0x00EE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00U" varstoreIndex="1" prompt="ESATA Port On Port 7" description=" SATA Port X Support ESATA Enabled/Disabled" size="1" offset="0x00EF" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00V" varstoreIndex="1" prompt="SATA Power On Port 0" description=" SATA Port Power Enabled/Disabled" size="1" offset="0x00F0" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Enabled" value="0x00"/>
+    <option text="Power Down" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00W" varstoreIndex="1" prompt="SATA Power On Port 1" description=" SATA Port Power Enabled/Disabled" size="1" offset="0x00F1" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Enabled" value="0x00"/>
+    <option text="Power Down" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00X" varstoreIndex="1" prompt="SATA Power On Port 2" description=" SATA Port Power Enabled/Disabled" size="1" offset="0x00F2" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Enabled" value="0x00"/>
+    <option text="Power Down" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00Y" varstoreIndex="1" prompt="SATA Power On Port 3" description=" SATA Port Power Enabled/Disabled" size="1" offset="0x00F3" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Enabled" value="0x00"/>
+    <option text="Power Down" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00Z" varstoreIndex="1" prompt="SATA Power On Port 4" description=" SATA Port Power Enabled/Disabled" size="1" offset="0x00F4" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Enabled" value="0x00"/>
+    <option text="Power Down" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB010" varstoreIndex="1" prompt="SATA Power On Port 5" description=" SATA Port Power Enabled/Disabled" size="1" offset="0x00F5" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Enabled" value="0x00"/>
+    <option text="Power Down" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB011" varstoreIndex="1" prompt="SATA Power On Port 6" description=" SATA Port Power Enabled/Disabled" size="1" offset="0x00F6" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Enabled" value="0x00"/>
+    <option text="Power Down" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB012" varstoreIndex="1" prompt="SATA Power On Port 7" description=" SATA Port Power Enabled/Disabled" size="1" offset="0x00F7" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Enabled" value="0x00"/>
+    <option text="Power Down" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01X" varstoreIndex="1" prompt="SATA Port 0 MODE" description="Indicates The Highest Allowable Speed Of The SATA Port 0" size="1" offset="0x00F8" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="GEN1" value="0x01"/>
+    <option text="GEN2" value="0x02"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01Y" varstoreIndex="1" prompt="SATA Port 1 MODE" description="Indicates The Highest Allowable Speed Of The SATA Port 1" size="1" offset="0x00F9" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="GEN1" value="0x01"/>
+    <option text="GEN2" value="0x02"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01Z" varstoreIndex="1" prompt="SATA Port 2 MODE" description="Indicates The Highest Allowable Speed Of The SATA Port 2" size="1" offset="0x00FA" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="GEN1" value="0x01"/>
+    <option text="GEN2" value="0x02"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB020" varstoreIndex="1" prompt="SATA Port 3 MODE" description="Indicates The Highest Allowable Speed Of The SATA Port 3" size="1" offset="0x00FB" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="GEN1" value="0x01"/>
+    <option text="GEN2" value="0x02"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB021" varstoreIndex="1" prompt="SATA Port 4 MODE" description="Indicates The Highest Allowable Speed Of The SATA Port 4" size="1" offset="0x00FC" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="GEN1" value="0x01"/>
+    <option text="GEN2" value="0x02"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB022" varstoreIndex="1" prompt="SATA Port 5 MODE" description="Indicates The Highest Allowable Speed Of The SATA Port 5" size="1" offset="0x00FD" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="GEN1" value="0x01"/>
+    <option text="GEN2" value="0x02"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB023" varstoreIndex="1" prompt="SATA Port 6 MODE" description="Indicates The Highest Allowable Speed Of The SATA Port 6" size="1" offset="0x00FE" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="GEN1" value="0x01"/>
+    <option text="GEN2" value="0x02"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB024" varstoreIndex="1" prompt="SATA Port 7 MODE" description="Indicates The Highest Allowable Speed Of The SATA Port 7" size="1" offset="0x00FF" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="GEN1" value="0x01"/>
+    <option text="GEN2" value="0x02"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB034" varstoreIndex="1" prompt="SATA Hot-Removabel Support" description="Hot-Removal Enhancement Function" size="1" offset="0x0102" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB02U" varstoreIndex="1" prompt="SATA 6 AHCI Support" description="Setting Only For AHCI Mode" size="1" offset="0x0103" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB02V" varstoreIndex="1" prompt="Int. Clk Differential Spread" description="SB Spread Spectrum Item Have To Enable" size="1" offset="0x0104" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB02X" varstoreIndex="1" prompt="SATA MAXGEN2 CAP OPTION" description="Set Sata Max Gen2 Mode" size="1" offset="0x0105" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB02Y" varstoreIndex="1" prompt="SATA CLK Mode Option" description="SATA Reference Clock Selector And Divider" size="1" offset="0x0106" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="EXT 25MHz" value="0x00"/>
+    <option text="INT 48MHz" value="0x01"/>
+    <option text="INT 100MHz" value="0x09"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01M" varstoreIndex="1" prompt="Aggressive Link PM Capability" description="Indicates Whether Host Bus Adapter (HBA) Can Support Auto-Generating Link Requests To The Partial Or Slumber States When There Are No Commands To Process" size="1" offset="0x0107" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01N" varstoreIndex="1" prompt="Port Multiplier Capability" description="Indicates Whether Host Bus Adapter (HBA) Can Support A Port Multiplier" size="1" offset="0x0108" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01U" varstoreIndex="1" prompt="SATA Ports Auto Clock Control" description="EnableDisable SATA Ports Auto Clock Control" size="1" offset="0x0109" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01O" varstoreIndex="1" prompt="SATA Partial State Capability" description="Indicates Whether SATA Host Bus Adapter (HBA) Can Support Transitions To The Partial State" size="1" offset="0x010A" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01S" varstoreIndex="1" prompt="SATA FIS Based Switching" description="Indicates Whether SATA Host Bus Adapter (HBA) Can Support Port Multiplier FIS-Based Switching" size="1" offset="0x010B" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01Q" varstoreIndex="1" prompt="SATA Command Completion Coalescing Support" description="Indicates Whether SATA Host Bus Adapter (HBA) Can Support Command Completion Coalescing" size="1" offset="0x010C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01P" varstoreIndex="1" prompt="SATA Slumber State Capability" description="Indicates Whether SATA Host Bus Adapter (HBA) Can Support Transitions To The Slumber State" size="1" offset="0x010D" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01R" varstoreIndex="1" prompt="SATA MSI Capability Support" description="SATA Controller Message-Based Interrupts Capability Support" size="1" offset="0x010E" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB02Z" varstoreIndex="1" prompt="SATA Target Support 8 Devices" description="Indicates Whether SATA Target Support 8 Devices Function" size="1" offset="0x010F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB030" varstoreIndex="1" prompt="Generic Mode" description="Sata Disable Generic Mode" size="1" offset="0x0110" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB031" varstoreIndex="1" prompt="SATA AHCI Enclosure" description="SATA AHCI Enclosure Management" size="1" offset="0x0111" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB032" varstoreIndex="1" prompt="SATA SGPIO 0" description="Enable/Disable SATA Serial General Purpose Input/Output (SGPIO) 0" size="1" offset="0x0112" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB033" varstoreIndex="1" prompt="SATA SGPIO 1" description="Enable/Disable SATA Serial General Purpose Input/Output (SGPIO) 1" size="1" offset="0x0113" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB02W" varstoreIndex="1" prompt="SATA PHY PLL" description="SATA PHY PLL Dynamic Shutdown" size="1" offset="0x0114" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03E" varstoreIndex="1" prompt="AC/DC Change Message Delivery" description="Send A Message To CPU To Indicate The Power Mode (AC VS Battery)" size="1" offset="0x0115" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03F" varstoreIndex="1" prompt="TimerTick Tracking" description="Send A Message To CPU To Indicate The Latest Periodic Timer Interval" size="1" offset="0x0116" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03G" varstoreIndex="1" prompt="Clock Interrupt Tag" description="Mark The Periodic Timer Interrupt" size="1" offset="0x0117" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03H" varstoreIndex="1" prompt="EHCI Traffic Handling" description="Cause CPU To Break Out From C State When USB EHCI Has Pending Traffic" size="1" offset="0x0118" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03I" varstoreIndex="1" prompt="Fusion Message C Multi-Core" description="Track Of CPU C State By Monitoring Each Core&amp;apos;s C State Message" size="1" offset="0x0119" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03J" varstoreIndex="1" prompt="Fusion Message C State" description="Enable The FCH C State Coordination Logic" size="1" offset="0x011A" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03L" varstoreIndex="1" prompt="SPI Read Mode" description="Change Dependent On Flash Part" size="1" offset="0x011C" default="0x05" CurrentVal="0x05">
+   <options>
+    <option text="Qual IO 1-4-4" value="0x05"/>
+    <option text="Qual IO 1-2-2" value="0x04"/>
+    <option text="Qual IO 1-1-4" value="0x03"/>
+    <option text="Qual IO 1-1-2" value="0x02"/>
+    <option text="Fast Read" value="0x07"/>
+    <option text="Normal" value="0x06"/>
+    <option text="Default" value="0x00"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03M" varstoreIndex="1" prompt="SPI 100MHz Support" description="Change Dependent On Flash Part" size="1" offset="0x011F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03O" varstoreIndex="1" prompt="SPI Normal Speed" description="Change Dependent On Flash Part" size="1" offset="0x011D" default="0x05" CurrentVal="0x05">
+   <options>
+    <option text="100MHz" value="0x05"/>
+    <option text="66MHz" value="0x01"/>
+    <option text="33MHz" value="0x02"/>
+    <option text="22MHz" value="0x03"/>
+    <option text="16.5MHz" value="0x04"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03N" varstoreIndex="1" prompt="SPI Fast Read Speed" description="Change Dependent On Flash Part" size="1" offset="0x011E" default="0x05" CurrentVal="0x05">
+   <options>
+    <option text="100MHz" value="0x05"/>
+    <option text="66MHz" value="0x01"/>
+    <option text="33MHz" value="0x02"/>
+    <option text="22MHz" value="0x03"/>
+    <option text="Default" value="0x00"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03P" varstoreIndex="1" prompt="SPI Burst Write" description="Change Dependent On Flash Part" size="1" offset="0x0120" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB070" varstoreIndex="1" prompt="I2C 0 D3 Support" description="I2C 0 D3 Support" size="1" offset="0x0121" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB071" varstoreIndex="1" prompt="I2C 1 D3 Support" description="I2C 1 D3 Support" size="1" offset="0x0122" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB072" varstoreIndex="1" prompt="I2C 2 D3 Support" description="I2C 2 D3 Support" size="1" offset="0x0123" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB073" varstoreIndex="1" prompt="I2C 3 D3 Support" description="I2C 3 D3 Support" size="1" offset="0x0124" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB092" varstoreIndex="1" prompt="I2C 4 D3 Support" description="I2C 4 D3 Support" size="1" offset="0x0125" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB093" varstoreIndex="1" prompt="I2C 5 D3 Support" description="I2C 5 D3 Support" size="1" offset="0x0126" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB074" varstoreIndex="1" prompt="UART 0 D3 Support" description="UART 0 D3 Support" size="1" offset="0x0127" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB075" varstoreIndex="1" prompt="UART 1 D3 Support" description="UART 1 D3 Support" size="1" offset="0x0128" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB094" varstoreIndex="1" prompt="UART 2 D3 Support" description="UART 2 D3 Support" size="1" offset="0x0129" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB095" varstoreIndex="1" prompt="UART 3 D3 Support" description="UART 3 D3 Support" size="1" offset="0x012A" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB076" varstoreIndex="1" prompt="SATA D3 Support" description="SATA D3 Support" size="1" offset="0x012B" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB077" varstoreIndex="1" prompt="EHCI D3 Support" description="EHCI D3 Support" size="1" offset="0x012C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB078" varstoreIndex="1" prompt="XHCI D3 Support" description="XHCI D3 Support" size="1" offset="0x012D" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB079" varstoreIndex="1" prompt="SD D3 Support" description="SD D3 Support" size="1" offset="0x012E" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB080" varstoreIndex="1" prompt="S0I3" description="S0I3 flag" size="1" offset="0x012F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB00L" varstoreIndex="1" prompt="Chipset Power Saving Features" description="Chipset Power Saving Features" size="1" offset="0x0130" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01K" varstoreIndex="1" prompt="SB Clock Spread Spectrum" description="Enable/Disable CG1_PLL Spread Spectrum" size="1" offset="0x0131" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01L" varstoreIndex="1" prompt="SB Clock Spread Spectrum Option" description="Options for CG1_PLL Spread Spectrum" size="1" offset="0x013D" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="-0.362%" value="0x00"/>
+    <option text="-0.375%" value="0x01"/>
+    <option text="-0.400%" value="0x02"/>
+    <option text="-0.425%" value="0x03"/>
+    <option text="-0.450%" value="0x04"/>
+    <option text="-0.475%" value="0x05"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01B" varstoreIndex="1" prompt="HPET In SB" description="HPET Function Switch" size="1" offset="0x0132" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SBF51" varstoreIndex="1" prompt="MsiDis in HPET" description="Expose MSI capability in HPET Capbility register" size="1" offset="0x0133" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01C" varstoreIndex="1" prompt="_OSC For PCI0" description="PCIe NativePcieSupport - Debug function." size="1" offset="0x0134" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB01V" varstoreIndex="1" prompt="USB Phy Power Down" description="Support for S4/S5 USB PHY Power Down" size="1" offset="0x0135" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="numeric" name="SB01W" varstoreIndex="1" prompt="PCIB_CLK_Stop Override" description="PCIB_CLK_Stop Override" size="2" offset="0x0136" default="0x0000" CurrentVal="0x0000">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB025" varstoreIndex="1" prompt="USB MSI Option" description="USB MSI Capability" size="1" offset="0x0138" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB027" varstoreIndex="1" prompt="LPC MSI Option" description="LPC MSI Capability" size="1" offset="0x0139" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB028" varstoreIndex="1" prompt="PCIBridge MSI Option" description="PCI-PCI Bridge MSI Capability" size="1" offset="0x013A" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB029" varstoreIndex="1" prompt="AB MSI Option" description="ABlink MSI Capability" size="1" offset="0x013B" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03Q" varstoreIndex="1" prompt="SB C1E Support" description="C1E Feature Need South Bridge And CPU Supported. This Item Open The C1E Of The SB Part." size="1" offset="0x013C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03S" varstoreIndex="1" prompt="SB Hardware Reduced Support" description="Hardware Reduced ACPI Feature. " size="1" offset="0x0140" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SB03R" varstoreIndex="1" prompt="GPP Serial Debug Bus Enable" description="GPP Serial Debug Bus Enable" size="1" offset="0x013F" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GNB006" varstoreIndex="1" prompt="IOMMU" description="Enable/Disable IOMMU Support" size="1" offset="0x01AA" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GNB007" varstoreIndex="1" prompt="Remote Display Feature" description="Enable/Disable Remote Display Feature Support" size="1" offset="0x01AB" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GNB008" varstoreIndex="1" prompt="Gnb Hd Audio" description="Enable/Disable Gnb Hd Audio Support" size="1" offset="0x01AC" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GNB002" varstoreIndex="1" prompt="Integrated Graphics" description="Enable Integrate Graphics Controller" size="1" offset="0x01A2" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Force" value="0x02"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GNB015" varstoreIndex="1" prompt="UMA Mode" description="UMA Mode" size="1" offset="0x01A7" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="None" value="0x00"/>
+    <option text="UMA_SPECIFIED" value="0x01"/>
+    <option text="UMA_AUTO" value="0x02"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GNB011" varstoreIndex="1" prompt="Uma Version" description="Uma Version" size="1" offset="0x01A8" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Legacy" value="0x00"/>
+    <option text="Non-Legacy" value="0x01"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GNB003" varstoreIndex="1" prompt="UMA Frame Buffer Size" description="Set UMA FB Size" size="4" offset="0x01A3" default="0x00000040" CurrentVal="0x00000040">
+   <options>
+    <option text="64M" value="0x00000040"/>
+    <option text="128M" value="0x00000080"/>
+    <option text="256M" value="0x00000100"/>
+    <option text="384M" value="0x00000180"/>
+    <option text="512M" value="0x00000200"/>
+    <option text="80M" value="0x00000050"/>
+    <option text="96M" value="0x00000060"/>
+    <option text="768M" value="0x00000300"/>
+    <option text="1G" value="0x00000400"/>
+    <option text="2G" value="0x00000800"/>
+    <option text="3G" value="0x00000C00"/>
+    <option text="4G" value="0x00001000"/>
+    <option text="8G" value="0x00002000"/>
+    <option text="16G" value="0x00004000"/>
+    <option text="Auto" value="0xFFFFFFFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="GNB004" varstoreIndex="1" prompt="PSPP Policy" description="PCIe Speed Power Policy" size="1" offset="0x01A9" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Performance" value="0x01"/>
+    <option text="Balanced-High" value="0x02"/>
+    <option text="Balanced-Low" value="0x03"/>
+    <option text="Power Saving" value="0x04"/>
+    <option text="Auto" value="0xFF"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="NB005" varstoreIndex="1" prompt="Above 4GB MMIO Limit" description="Select Above 4GB MMIO Limit to 38~43 bits limit. This option works only when &amp;apos;Above 4G decoding&amp;apos; is enabled" size="1" offset="0x01AD" default="0x26" CurrentVal="0x26">
+   <options>
+    <option text="38bit (256GB)" value="0x26"/>
+    <option text="39bit (512GB)" value="0x27"/>
+    <option text="40bit (1TB)" value="0x28"/>
+    <option text="41bit (2TB)" value="0x29"/>
+    <option text="42bit (4TB)" value="0x2A"/>
+    <option text="43bit (8TB)" value="0x2B"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CPU008" varstoreIndex="1" prompt="STIBP Status" description="Single Thread Indirect Branch Predictor(STIBP) is a method to mitigate indirect branch target injection attacks on AMD products" size="1" offset="0x0186" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SECB001" varstoreIndex="9" prompt="Secure Boot" description="Enable to support Windows 8 or later versions Secure Boot." size="1" offset="0x0000" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SECB002" varstoreIndex="9" prompt="Secure Boot Mode" description="Secure Boot mode options:
+Standard or Custom.
+In Custom mode, Secure Boot Policy variables can be configured by a physically present user without full authentication" size="1" offset="0x0001" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Standard" value="0x00"/>
+    <option text="Custom" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SECB008" varstoreIndex="9" prompt="Factory Key Provision" description="Install factory default Secure Boot keys after the platform reset and while the System is in Setup mode" size="1" offset="0x0002" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="numeric" name="SETUP003" varstoreIndex="10" prompt="Setup Prompt Timeout" description="Configure the number of seconds to wait for the UEFI setup utility." size="2" offset="0x0000" default="0x0000" CurrentVal="0x0000">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SETUP004" varstoreIndex="1" prompt="Bootup Num-Lock" description="Select whether Num Lock should be turned on or off when the system boots up. " size="1" offset="0x0000" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="On" value="0x01"/>
+    <option text="Off" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="SETUP005" varstoreIndex="8" prompt="Full Screen Logo" description="Enable to display the boot logo or disable to show normal POST messages." size="1" offset="0x0040" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PTT000" varstoreIndex="1" prompt="Fast Boot" description="Fast Boot minimizes your computer&amp;apos;s boot time. In fast mode you may not boot from an USB storage device. Ultra Fast mode is only supported by Windows 8 and the VBIOS must support UEFI GOP if you are using an external graphics card. Please notice that Ultra Fast mode will boot so fast that the only way to enter this UEFI Setup Utility is to Clear CMOS or run the Restart to UEFI utility in Windows." size="1" offset="0x0001" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PTT001" varstoreIndex="1" prompt=" SATA Support" description="If Last Boot SATA Devices Only, Only last boot SATA device will be available in Post. If All SATA Devices, all SATA devices will be available in OS and Post." size="1" offset="0x0002" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Last Boot SATA Devices Only" value="0x00"/>
+    <option text="All SATA Devices" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PTT006" varstoreIndex="1" prompt=" NVMe Support" description="If Disabled, NVMe device will be skipped." size="1" offset="0x0009" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PTT014" varstoreIndex="1" prompt=" UFS Support" description="If Disabled, UFS device will be skipped." size="1" offset="0x000A" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PTT004" varstoreIndex="1" prompt=" VGA Support" description="If Auto, only install Legacy OpRom with Legacy OS and logo would NOT be shown during post. Efi driver will still be installed with EFI OS." size="1" offset="0x0003" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Auto" value="0x00"/>
+    <option text="EFI Driver" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PTT002" varstoreIndex="1" prompt=" USB Support" description="If Disabled, all USB devices will NOT be available until after OS boot. If Partial Initial, USB Mass Storage and specific USB port/device will NOT be available before OS boot. If Enabled, all USB devices will be available in OS and Post." size="1" offset="0x0004" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Full Initial" value="0x01"/>
+    <option text="Partial Initial" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PTT003" varstoreIndex="1" prompt=" PS2 Devices Support" description="If Disabled, PS2 devices will be skipped." size="1" offset="0x0005" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PTT005" varstoreIndex="1" prompt=" Network Stack Driver Support" description="If Disabled, NetWork Stack Driver will be skipped." size="1" offset="0x0008" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PTT010" varstoreIndex="1" prompt="Redirection Support" description="If disable, Redirection function will be disabled." size="1" offset="0x0007" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CSM006" varstoreIndex="1" prompt="Boot option filter" description="This option controls Legacy/UEFI ROMs priority" size="1" offset="0x01B7" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="UEFI and Legacy" value="0x00"/>
+    <option text="Legacy only" value="0x01"/>
+    <option text="UEFI only" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="PTT000" varstoreIndex="1" prompt="Fast Boot" description="Fast Boot minimizes your computer&amp;apos;s boot time. In fast mode you may not boot from an USB storage device. Ultra Fast mode is only supported by Windows 8 and the VBIOS must support UEFI GOP if you are using an external graphics card. Please notice that Ultra Fast mode will boot so fast that the only way to enter this UEFI Setup Utility is to Clear CMOS or run the Restart to UEFI utility in Windows." size="1" offset="0x0001" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="BFOL000" varstoreIndex="1" prompt="Boot From Onboard LAN(X550)" description="To enable/disable the boot from onboard LAN function. 
+Press &amp;lt;Ctrl - S&amp;gt; to enter LAN Rom during UEFI POST process. 
+Press &amp;lt;Ctrl - D&amp;gt; to enter iSCSI Rom during UEFI POST process." size="1" offset="0x01EE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Onboard LAN1 PXE" value="0x04"/>
+    <option text="Onboard LAN2 PXE" value="0x05"/>
+    <option text="Onboard LAN UEFI PXE" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="BFOL001" varstoreIndex="1" prompt="Boot From Onboard LAN(X550)" description="To enable/disable the boot from onboard LAN function. 
+Press &amp;lt;Ctrl - S&amp;gt; to enter LAN Rom during UEFI POST process. 
+Press &amp;lt;Ctrl - D&amp;gt; to enter iSCSI Rom during UEFI POST process." size="1" offset="0x01EE" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Onboard LAN UEFI PXE" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="numeric" name="SETUP003" varstoreIndex="10" prompt="Setup Prompt Timeout" description="Configure the number of seconds to wait for the UEFI setup utility." size="2" offset="0x0000" default="0x0000" CurrentVal="0x0000">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SETUP004" varstoreIndex="1" prompt="Bootup Num-Lock" description="Select whether Num Lock should be turned on or off when the system boots up. " size="1" offset="0x0000" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="On" value="0x01"/>
+    <option text="Off" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="BEEP000" varstoreIndex="1" prompt="Boot Beep" description="Select whether the Boot Beep should be turned on or off when the system boots up. Please note that a buzzer is needed." size="1" offset="0x01F7" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="SETUP005" varstoreIndex="8" prompt="Full Screen Logo" description="Enable to display the boot logo or disable to show normal POST messages." size="1" offset="0x0040" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CSM000" varstoreIndex="1" prompt="  AddOn ROM Display" description="Set display mode for Option ROM" size="1" offset="0x01B2" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CSM005" varstoreIndex="1" prompt="CSM" description="Enable to launch the Compatibility Support Module. If you are using Windows 8 64-bit UEFI and all of your devices support UEFI, you may also disable CSM for faster boot speed." size="1" offset="0x01B1" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="Custom" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CSM007" varstoreIndex="1" prompt="Launch PXE OpROM Policy" description="Select UEFI only to run those that support UEFI option ROM only. Select Legacy only to run those that support legacy option ROM only. Select Do not launch to not execute both legacy and UEFI option ROM." size="1" offset="0x01B8" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Do not launch" value="0x00"/>
+    <option text="UEFI only" value="0x01"/>
+    <option text="Legacy only" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CSM008" varstoreIndex="1" prompt="Launch Storage OpROM Policy" description="Select UEFI only to run those that support UEFI option ROM only. Select Legacy only to run those that support legacy option ROM only. Select Do not launch to not execute both legacy and UEFI option ROM." size="1" offset="0x01B9" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Do not launch" value="0x00"/>
+    <option text="UEFI only" value="0x01"/>
+    <option text="Legacy only" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="CSM009" varstoreIndex="1" prompt="Launch Video OpROM Policy" description="Select UEFI only to run those that support UEFI option ROM only. Select Legacy only to run those that support legacy option ROM only. Select Do not launch to not execute both legacy and UEFI option ROM." size="1" offset="0x01BA" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Do not launch" value="0x00"/>
+    <option text="UEFI only" value="0x01"/>
+    <option text="Legacy only" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SLOTOPROM021" varstoreIndex="1" prompt="Launch Other Storage OpROM Policy" description="Select UEFI only to run those that support UEFI option ROM only. Select Legacy only to run those that support legacy option ROM only. Select Do not launch to not execute both legacy and UEFI option ROM." size="1" offset="0x01B9" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Do not launch" value="0x00"/>
+    <option text="UEFI only" value="0x01"/>
+    <option text="Legacy only" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SLOTOPROM022" varstoreIndex="1" prompt="Launch Video OpROM Policy" description="Select UEFI only to run those that support UEFI option ROM only. Select Legacy only to run those that support legacy option ROM only. Select Do not launch to not execute both legacy and UEFI option ROM." size="1" offset="0x01BA" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="UEFI only" value="0x01"/>
+    <option text="Legacy only" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SLOTOPROM007" varstoreIndex="1" prompt="PCIE7 Slot OpROM" description="To select slot Storage and Network Option ROM policy. In Auto option, the default is Disabled with NVMe device, but it is Legacy with other devices.
+(This item can&amp;apos;t select Video Option ROM policy.)" size="1" offset="0x01EC" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Legacy" value="0x01"/>
+    <option text="UEFI" value="0x02"/>
+    <option text="Auto" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SLOTOPROM00B" varstoreIndex="1" prompt="M2_1 Slot OpROM" description="To select slot Storage and Network Option ROM policy. In Auto option, the default is Disabled with NVMe device, but it is Legacy with other devices.
+(This item can&amp;apos;t select Video Option ROM policy.)" size="1" offset="0x01F0" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Legacy" value="0x01"/>
+    <option text="UEFI" value="0x02"/>
+    <option text="Auto" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SLOTOPROM00C" varstoreIndex="1" prompt="M2_2 Slot OpROM" description="To select slot Storage and Network Option ROM policy. In Auto option, the default is Disabled with NVMe device, but it is Legacy with other devices.
+(This item can&amp;apos;t select Video Option ROM policy.)" size="1" offset="0x01F1" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Legacy" value="0x01"/>
+    <option text="UEFI" value="0x02"/>
+    <option text="Auto" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SLOTOPROM017" varstoreIndex="1" prompt="PCIE7 Slot OpROM" description="To select slot Storage and Network Option ROM policy. In Auto option, the default is Disabled with NVMe device, but it is Legacy with other devices.
+(This item can&amp;apos;t select Video Option ROM policy.)" size="1" offset="0x01EC" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="UEFI" value="0x02"/>
+    <option text="Auto" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SLOTOPROM01B" varstoreIndex="1" prompt="M2_1 Slot OpROM" description="To select slot Storage and Network Option ROM policy. In Auto option, the default is Disabled with NVMe device, but it is Legacy with other devices.
+(This item can&amp;apos;t select Video Option ROM policy.)" size="1" offset="0x01F0" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="UEFI" value="0x02"/>
+    <option text="Auto" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="SLOTOPROM01C" varstoreIndex="1" prompt="M2_2 Slot OpROM" description="To select slot Storage and Network Option ROM policy. In Auto option, the default is Disabled with NVMe device, but it is Legacy with other devices.
+(This item can&amp;apos;t select Video Option ROM policy.)" size="1" offset="0x01F1" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="UEFI" value="0x02"/>
+    <option text="Auto" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="RFWCS030" varstoreIndex="12" prompt="Refresh attribute registry" description="Refreshes the attribute registry in next boot. This will be helpful for complex condition evaluation" size="1" offset="0x0000" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="RECV000" varstoreIndex="13" prompt="Reset NVRAM" description="Set this option to reset NVRAM to default values" size="1" offset="0x0003" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="checkbox" name="RECV001" varstoreIndex="13" prompt="Boot Block Update" description="Set this option to update boot block area of the firmware" size="1" offset="0x0004" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI600" varstoreIndex="14" prompt="BMC Support" description="Enable/Disable interfaces to communicate with BMC" size="1" offset="0x0000" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI601" varstoreIndex="14" prompt="Wait For BMC" description="Wait For BMC response for specified time out. BMC starts at the same time when BIOS starts during AC power ON. It takes around 90 seconds to initialize Host to BMC interfaces." size="1" offset="0x0001" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI100" varstoreIndex="14" prompt="FRB-2 Timer" description="Enable or Disable FRB-2 timer(POST timer)" size="1" offset="0x020F" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI101" varstoreIndex="14" prompt="FRB-2 Timer timeout" description="Enter value Between 3 to 6 min for FRB-2 Timer Expiration value" size="2" offset="0x0210" default="0x00B4" CurrentVal="0x00B4">
+   <options>
+    <option text="3 minutes" value="0x00B4"/>
+    <option text="4 minutes" value="0x00F0"/>
+    <option text="5 minutes" value="0x012C"/>
+    <option text="6 minutes" value="0x0168"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI102" varstoreIndex="14" prompt="FRB-2 Timer Policy" description="Configure how the system should respond if the FRB-2 Timer expires. Not available if FRB-2 Timer is disabled." size="1" offset="0x0212" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Do Nothing" value="0x00"/>
+    <option text="Reset" value="0x01"/>
+    <option text="Power Down" value="0x02"/>
+    <option text="Power Cycle" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI103" varstoreIndex="14" prompt="OS Watchdog Timer" description="If enabled, starts a BIOS timer which can only be shut off by Management Software after the OS loads.  Helps determine that the OS successfully loaded or follows the OS Boot Watchdog Timer policy." size="1" offset="0x0213" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI104" varstoreIndex="14" prompt="OS Wtd Timer Timeout" description="Configure the length of the OS Boot Watchdog Timer.  Not available if OS Boot Watchdog Timer is disabled." size="2" offset="0x0214" default="0x012C" CurrentVal="0x012C">
+   <options>
+    <option text="5 minutes" value="0x012C"/>
+    <option text="10 minutes" value="0x0258"/>
+    <option text="15 minutes" value="0x0384"/>
+    <option text="20 minutes" value="0x04B0"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI105" varstoreIndex="14" prompt="OS Wtd Timer Policy" description="Configure how the system should respond if the OS Boot Watchdog Timer expires. Not available if OS Boot Watchdog Timer is disabled." size="1" offset="0x0216" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Do Nothing" value="0x00"/>
+    <option text="Reset" value="0x01"/>
+    <option text="Power Down" value="0x02"/>
+    <option text="Power Cycle" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI400" varstoreIndex="14" prompt="Serial Mux" description="Press &amp;lt;Enter&amp;gt; to enable or disable Serial Mux configuration." size="1" offset="0x0219" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI522" varstoreIndex="14" prompt="Manual setting IPMI LAN" description="When &amp;quot;Manual Setting IPMI LAN Configuration&amp;quot; is set to default &amp;quot;No&amp;quot;, the IP address will follow DHCP.
+
+
+If you would like to set it as Static IP, please toggle the settings to &amp;quot;Yes&amp;quot;, and the changes for IPMI LAN configuration will take place after rebooting." size="1" offset="0x0002" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Yes" value="0x01"/>
+    <option text="No" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI523" varstoreIndex="14" prompt="Configuration address source" description="Static/DHCP IP address" size="1" offset="0x0004" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Static" value="0x01"/>
+    <option text="DHCP" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="string" setupType="string" name="IPMI524" varstoreIndex="14" prompt="Station IP address" description="Static IP Address 
+0.0.0.0 - 255.255.255.255" size="32" offset="0x0006" default="0x0000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x0000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="string" setupType="string" name="IPMI525" varstoreIndex="14" prompt="Current subnet mask" description="Subnet mask 
+0.0.0.0 - 255.255.255.255" size="32" offset="0x0042" default="0x0000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x0000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="string" setupType="string" name="IPMI527" varstoreIndex="14" prompt="Current router IP address" description="Router IP address 
+0.0.0.0 - 255.255.255.255" size="32" offset="0x007E" default="0x0000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x0000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI522" varstoreIndex="14" prompt="Manual setting IPMI LAN" description="When &amp;quot;Manual Setting IPMI LAN Configuration&amp;quot; is set to default &amp;quot;No&amp;quot;, the IP address will follow DHCP.
+
+
+If you would like to set it as Static IP, please toggle the settings to &amp;quot;Yes&amp;quot;, and the changes for IPMI LAN configuration will take place after rebooting." size="1" offset="0x0003" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Yes" value="0x01"/>
+    <option text="No" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI523" varstoreIndex="14" prompt="Configuration address source" description="Static/DHCP IP address" size="1" offset="0x0005" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Static" value="0x01"/>
+    <option text="DHCP" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="string" setupType="string" name="IPMI524" varstoreIndex="14" prompt="Station IP address" description="Static IP Address 
+0.0.0.0 - 255.255.255.255" size="32" offset="0x0024" default="0x0000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x0000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="string" setupType="string" name="IPMI525" varstoreIndex="14" prompt="Current subnet mask" description="Subnet mask 
+0.0.0.0 - 255.255.255.255" size="32" offset="0x0060" default="0x0000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x0000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="string" setupType="string" name="IPMI527" varstoreIndex="14" prompt="Current router IP address" description="Router IP address 
+0.0.0.0 - 255.255.255.255" size="32" offset="0x009C" default="0x0000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x0000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI510" varstoreIndex="14" prompt="IPV6 Support" description="Enable or Disable LAN IPV6 Support" size="1" offset="0x00BA" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI521" varstoreIndex="14" prompt="Manual setting IPMI LAN(IPV6)" description="Select to configure LAN channel parameters statically or dynamically(by BIOS or BMC). Unspecified option will not modify any BMC network parameters during BIOS phase" size="1" offset="0x0160" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="No Change" value="0x00"/>
+    <option text="Static" value="0x01"/>
+    <option text="DHCP" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="string" setupType="string" name="IPMI532" varstoreIndex="14" prompt="Station IPV6 address" description="Enter station IPV6 address" size="80" offset="0x0162" default="0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="scalar" setupType="numeric" name="IPMI543" varstoreIndex="14" prompt="Prefix Length" description="Change the prefix length" size="1" offset="0x00BC" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="string" setupType="string" name="IPMI554" varstoreIndex="14" prompt="IPV6 Router IP Address" description="Change the IPV6 Router1 IP Address" size="80" offset="0x00C0" default="0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI511" varstoreIndex="14" prompt="IPV6 Support" description="Enable or Disable LAN IPV6 Support" size="1" offset="0x00BB" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enabled" value="0x01"/>
+    <option text="Disabled" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI522" varstoreIndex="14" prompt="Manual setting IPMI LAN(IPV6)" description="Select to configure LAN channel parameters statically or dynamically(by BIOS or BMC). Unspecified option will not modify any BMC network parameters during BIOS phase" size="1" offset="0x0161" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="No Change" value="0x00"/>
+    <option text="Static" value="0x01"/>
+    <option text="DHCP" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="string" setupType="string" name="IPMI533" varstoreIndex="14" prompt="Station IPV6 address" description="Enter station IPV6 address" size="80" offset="0x01B2" default="0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="scalar" setupType="numeric" name="IPMI544" varstoreIndex="14" prompt="Prefix Length" description="Change the prefix length" size="1" offset="0x00BD" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="string" setupType="string" name="IPMI555" varstoreIndex="14" prompt="IPV6 Router IP Address" description="Change the IPV6 Router1 IP Address" size="80" offset="0x0110" default="0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI000" varstoreIndex="14" prompt="SEL Components" description="Change this to enable or disable event logging for error/progress codes during boot." size="1" offset="0x020A" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI001" varstoreIndex="14" prompt="Erase SEL" description="Choose options for erasing SEL." size="1" offset="0x020B" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="No" value="0x00"/>
+    <option text="Yes, On next reset" value="0x01"/>
+    <option text="Yes, On every reset" value="0x02"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI002" varstoreIndex="14" prompt="When SEL is Full" description="Choose options for reactions to a full SEL." size="1" offset="0x020C" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Do Nothing" value="0x00"/>
+    <option text="Erase Immediately" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI003" varstoreIndex="14" prompt="Log EFI Status Codes" description="Disable the logging of EFI Status Codes or log only error code or only progress code or both." size="1" offset="0x020D" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Both" value="0x01"/>
+    <option text="Error code" value="0x02"/>
+    <option text="Progress code" value="0x03"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="ASRRPCIEIJ000" varstoreIndex="14" prompt="PCIe Device Degrade ELog Support" description="Enable/Disable PCIe Device Degrade Error Logging Support" size="1" offset="0x02E1" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI200" varstoreIndex="14" prompt="Erase Log" description="Erase Log Options" size="1" offset="0x0217" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Yes, On every reset" value="0x01"/>
+    <option text="No" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI201" varstoreIndex="14" prompt="When log is full" description="Select the action to be taken when log is full" size="1" offset="0x0218" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Clear Log" value="0x01"/>
+    <option text="Do not log any more" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="string" setupType="string" name="IPMI800" varstoreIndex="14" prompt="User Name" description="Enter BMC User Name" size="34" offset="0x021B" default="0x00000000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x00000000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI802" varstoreIndex="14" prompt="User Access" description="Enable/Disable the BMC User&amp;apos;s Access." size="1" offset="0x02D3" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enable" value="0x01"/>
+    <option text="Disable" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="numeric" name="IPMI803" varstoreIndex="14" prompt="Channel No" description="Enter BMC Channel Number" size="1" offset="0x02D1" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI804" varstoreIndex="14" prompt="User Privilege Limit" description="Enter BMC User Privilege Limit for Selected Channel" size="1" offset="0x02D2" default="0x0F" CurrentVal="0x0F">
+   <options>
+    <option text="No Access" value="0x0F"/>
+    <option text="Callback" value="0x01"/>
+    <option text="User" value="0x02"/>
+    <option text="Operator" value="0x03"/>
+    <option text="Administrator" value="0x04"/>
+    <option text="OEM Proprietary" value="0x05"/>
+   </options>
+  </knob>
+  <knob type="string" setupType="string" name="IPMI805" varstoreIndex="14" prompt="User Name" description="Enter BMC User Name" size="34" offset="0x0265" default="0x00000000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x00000000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="string" setupType="string" name="IPMI807" varstoreIndex="14" prompt="User Name" description="Enter BMC User Name" size="34" offset="0x0287" default="0x00000000000000000000000000000000000000000000000000000000000000000000" CurrentVal="0x00000000000000000000000000000000000000000000000000000000000000000000">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI810" varstoreIndex="14" prompt="User Access" description="Enable/Disable the BMC User&amp;apos;s Access." size="1" offset="0x02D8" default="0x01" CurrentVal="0x01">
+   <options>
+    <option text="Enable" value="0x01"/>
+    <option text="Disable" value="0x00"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="numeric" name="IPMI811" varstoreIndex="14" prompt="Channel No" description="Enter BMC Channel Number" size="1" offset="0x02D9" default="0x00" CurrentVal="0x00">
+  </knob>
+  <knob type="scalar" setupType="oneof" name="IPMI812" varstoreIndex="14" prompt="User Privilege Limit" description="Enter BMC User Privilege Limit for Selected Channel" size="1" offset="0x02DA" default="0x0F" CurrentVal="0x0F">
+   <options>
+    <option text="No Access" value="0x0F"/>
+    <option text="Callback" value="0x01"/>
+    <option text="User" value="0x02"/>
+    <option text="Operator" value="0x03"/>
+    <option text="Administrator" value="0x04"/>
+    <option text="OEM Proprietary" value="0x05"/>
+   </options>
+  </knob>
+  <knob type="scalar" setupType="oneof" name="BMCTOOL000" varstoreIndex="14" prompt="KCS control" description="Select the KSC interface state after POST end. If [Enabled] is selected, the BMC will remain KCS interface after POST stage. If [Disabled] is selected, the BMC will disable KCS interface after POST stage" size="1" offset="0x02E2" default="0x00" CurrentVal="0x00">
+   <options>
+    <option text="Disabled" value="0x00"/>
+    <option text="Enabled" value="0x01"/>
+    <option text="No change" value="0x02"/>
+   </options>
+  </knob>
+ </biosknobs>
+</SYSTEM>

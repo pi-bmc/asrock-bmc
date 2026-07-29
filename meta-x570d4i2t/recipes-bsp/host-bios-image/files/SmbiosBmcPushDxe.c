@@ -40,6 +40,11 @@
 #include <Guid/SmBios.h>
 #include <Protocol/Smbios.h>
 
+/* The injected driver has two halves sharing one KCS transport: this SMBIOS
+   push and BiosCfgOobDxe (the BIOS-config OOB producer). KcsTxn/Post are
+   defined here and declared there. */
+#include "HostBmcKcs.h"
+
 /* Inline the standard PI/UEFI GUID so the binary is independent of the EDK2
    tree used to build (QEMU's MdePkg.dec ships a wrong 0x4940 variant). */
 STATIC EFI_GUID mEfiSmbiosProtocolGuid = {
@@ -79,14 +84,14 @@ STATIC CONST UINT8 mOen[3] = { 0xCF, 0xC2, 0x00 };
 STATIC BOOLEAN mDone = FALSE;
 STATIC UINT8   mLastCC = 0xFF;
 
-STATIC VOID Post (UINT8 v) { IoWrite8 (0x80, v); }
+VOID Post (UINT8 v) { IoWrite8 (0x80, v); }
 
 /* ── KCS ─────────────────────────────────────────────────────────────────── */
 STATIC INTN KcsWaitIbf (VOID) { for (UINT32 i=0;i<KCS_SPIN;i++) if (!(IoRead8(KCS_CMD)&KCS_IBF)) return 0; return -1; }
 STATIC INTN KcsWaitObf (VOID) { for (UINT32 i=0;i<KCS_SPIN;i++) if (IoRead8(KCS_CMD)&KCS_OBF) return 0; return -1; }
 STATIC VOID KcsClrObf (VOID) { if (IoRead8(KCS_CMD)&KCS_OBF) IoRead8(KCS_DATA); }
 
-STATIC EFI_STATUS
+EFI_STATUS
 KcsTxn (CONST UINT8 *req, UINT32 rlen, UINT8 *rsp, UINT32 *rsplen)
 {
   UINT32 i, n, k;
@@ -457,8 +462,13 @@ STATIC VOID DoPush (VOID)
   FreePool (Buf);
 }
 
-STATIC VOID EFIAPI OnReadyToBoot (IN EFI_EVENT E, IN VOID *C) { Post (0x76); DoPush (); }
-STATIC VOID EFIAPI OnEndOfDxe   (IN EFI_EVENT E, IN VOID *C) { Post (0x75); DoPush (); }
+/* Both halves of the injected driver run from the same hooks. The BIOS-config
+   exchange is independent of the SMBIOS push (either may finish first), so the
+   timer below only stands down once both report done. */
+STATIC VOID DoWork (VOID) { DoPush (); BiosCfgOobRun (); }
+
+STATIC VOID EFIAPI OnReadyToBoot (IN EFI_EVENT E, IN VOID *C) { Post (0x76); DoWork (); }
+STATIC VOID EFIAPI OnEndOfDxe   (IN EFI_EVENT E, IN VOID *C) { Post (0x75); DoWork (); }
 
 STATIC UINTN     mTicks = 0;
 STATIC EFI_EVENT mTimer = NULL;
@@ -467,9 +477,9 @@ STATIC VOID EFIAPI
 OnTimer (IN EFI_EVENT Event, IN VOID *Context)
 {
   Post (0x74);
-  DoPush ();
+  DoWork ();
   mTicks++;
-  if (mDone || mTicks > 600) {
+  if ((mDone && BiosCfgOobIsDone ()) || mTicks > 600) {
     gBS->SetTimer (Event, TimerCancel, 0);
     gBS->CloseEvent (Event);
     mTimer = NULL;
@@ -481,6 +491,8 @@ SmbiosBmcPushEntry (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 {
   EFI_EVENT Event;
   Post (0x70);    /* unique entry marker — 0x6x/0x7x not used by AMI on this board */
+
+  BiosCfgOobInit ();
 
   /* Immediate synchronous KCS ping at entry: proves the DXE was dispatched and
      KCS is reachable without relying on any timer or event.  Appears in the BMC
