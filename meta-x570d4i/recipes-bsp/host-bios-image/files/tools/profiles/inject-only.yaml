@@ -61,9 +61,6 @@ inject:
   - name: BiosCfgOobDxe
     efi:  BiosCfgOobDxe.efi
     guid: 9b3c62d1-4e78-4a05-8f21-6c07ae5db934
-  - name: OobIpmiDxe
-    efi:  OobIpmiDxe.efi
-    guid: 7a41c5e2-30d9-4b17-a8f6-0c2e94b7d513
   - name: VideoRouteDxe
     efi:  VideoRouteDxe.efi
     guid: c17b6e94-4a25-4d83-9f0b-6e83d2a10c57
@@ -76,3 +73,32 @@ inject:
   - name: OobSetupDefaultsDxe
     efi:  OobSetupDefaultsDxe.efi
     guid: 53c918ae-6f3b-4db5-aa69-c028199a6df7
+
+# ---------------------------------------------------------------------------
+# Dispatch order: OobIpmiDxe must beat the stock apriori
+# ---------------------------------------------------------------------------
+# The DXE core runs every apriori entry, in order, BEFORE evaluating any DEPEX.
+# An injected driver has DEPEX=TRUE, which only makes it eligible in the first
+# ordinary round -- still after the entire apriori list. That is too late for an
+# apriori module that resolves a protocol once and caches the pointer.
+#
+# AMI's Bds is exactly that: it reads the IPMI transport from a cached global
+# and drives Get/Set System Boot Options over it (netfn 0x00 cmd 0x09/0x08,
+# parameters 0 Set-In-Progress, 4 Boot-Info-Acknowledge, 5 Boot-Flags).
+#
+# DELIBERATELY NOT SET IN THIS PROFILE, for two independent reasons:
+#
+#   1. Not needed. inject-only retains DxeIpmiBmcInitialize, the stock producer
+#      of 4A1D0E66, which is itself dispatched early — so Bds finds a transport
+#      without our help. Confirmed on hardware: this profile issues the full
+#      netfn 0x00 sequence (params 0/4/5) and honours boot overrides.
+#
+#   2. It would fail. prepend_apriori keeps the apriori file's byte length fixed
+#      so the FFS chain does not shift, so an insert has to reuse a slot the
+#      prune freed. This profile strips nothing that is named in the apriori
+#      ("DXE apriori — no entries reference stripped modules"), so there is no
+#      free slot and romsurgeon would raise rather than silently push a real
+#      entry off the end.
+#
+# See strip-oob.yaml, where DxeIpmiBmcInitialize IS removed and the ordering
+# therefore has to be established explicitly.

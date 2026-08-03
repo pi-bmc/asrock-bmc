@@ -90,13 +90,43 @@ TARGET_FFS_GUID ?= "9df02dfd-8cf7-4fc7-b8ae-cbd9560a3f24"
 UEFIREPLACE ?= "${UNPACKDIR}/UEFIReplace"
 TRUE_DEPEX ?= "${WORKDIR}/true.depex"
 
+# ---------------------------------------------------------------------------
+# FFS slots we DISPLACE rather than add to (driver:slot-guid pairs)
+# ---------------------------------------------------------------------------
+# Replacing an existing FFS beats adding a new one whenever a suitable donor
+# exists. The file GUID is preserved, so anything that already refers to it --
+# most importantly the DXE apriori -- keeps resolving, and the replacement
+# dispatches at exactly the point the original did. It also needs no free space
+# in the volume.
+#
+#   SmbiosBmcPushDxe -> SendInfoBmcIpmiDxe (9df02dfd)
+#       The original arrangement. Note this one GROWS the slot (6,400 B into a
+#       3,266 B file), which is fine: UEFIReplace rebuilds the FFS.
+#
+#   OobIpmiDxe -> DxeIpmiBmcInitialize (6372357a)
+#       The stock producer of the AMI DXE IPMI transport 4A1D0E66, and entry 7
+#       of the 15-entry DXE apriori -- i.e. dispatched before ANY DEPEX is
+#       evaluated. Injecting OobIpmiDxe as a new FFS instead gave it DEPEX=TRUE,
+#       which is only eligible in the first ordinary round, strictly later than
+#       the apriori. Taking the slot restores the stock ordering exactly, and
+#       shrinks the file 23,552 -> ~3,840 bytes into the bargain.
+#
+#       Consequence: DxeIpmiBmcInitialize must NOT appear in any strip profile,
+#       for the same reason SendInfoBmcIpmiDxe must not -- by the time romsurgeon
+#       runs, that GUID is OUR driver.
+OOB_REPLACE_SLOTS ?= "\
+    SmbiosBmcPushDxe:9df02dfd-8cf7-4fc7-b8ae-cbd9560a3f24 \
+    OobIpmiDxe:6372357a-06d7-43ef-b55c-1964f3dd6916 \
+"
+
 # Every driver OpenOobPkg.dsc produces.
 OOB_DRIVERS ?= "SmbiosBmcPushDxe BiosCfgOobDxe OobIpmiDxe VideoRouteDxe OobSetupDefaultsDxe"
 
-# Drivers grafted in as NEW FFS files, i.e. everything except SmbiosBmcPushDxe,
-# which reaches the flash by displacing the AMI SendInfoBmcIpmiDxe slot instead.
+# Drivers grafted in as NEW FFS files. Everything in OOB_REPLACE_SLOTS is
+# excluded, because those reach the flash by displacing an existing AMI FFS
+# rather than being appended: SmbiosBmcPushDxe and OobIpmiDxe.
 # Only used when HOST_BIOS_STRIP_OOB is enabled.
-OOB_INJECT_DRIVERS ?= "BiosCfgOobDxe OobIpmiDxe VideoRouteDxe OobSetupDefaultsDxe"
+OOB_INJECT_DRIVERS ?= "BiosCfgOobDxe VideoRouteDxe OobSetupDefaultsDxe"
 
 # Run tools/romsurgeon.py to free space in the dispatched firmware volume and
 # graft in OOB_INJECT_DRIVERS.
@@ -121,6 +151,56 @@ HOST_BIOS_STRIP_OOB ?= "0"
 HOST_BIOS_OOB_PROFILE ?= "inject-only"
 STRIP_PROFILE ?= "${UNPACKDIR}/tools/profiles/${HOST_BIOS_OOB_PROFILE}.yaml"
 STRIPPED_ROM ?= "host-bios-${MACHINE}-2.59C-openoob.rom"
+
+# ---------------------------------------------------------------------------
+# Setup defaults baked into the NVAR store  (NAME:PAYLOAD_LEN:OFFSET:VALUE)
+# ---------------------------------------------------------------------------
+# These are boot requirements, not preferences, so they are written into the
+# firmware's *defaults* rather than enforced at runtime. Two reasons that
+# matters:
+#
+#   * Timing. A DXE driver is already too late for anything consumed earlier --
+#     PCI resource assignment reads Above 4G Decoding before our code runs, so
+#     correcting it at runtime costs a reboot to take effect.
+#   * Durability. A shipped ROM contains no live Setup variables at all; the
+#     only NVAR record is StdDefaults, and the firmware materialises every
+#     varstore from it. Reflashing the BIOS therefore wipes the live NVAR
+#     region back to exactly these defaults -- which is why runtime-only fixes
+#     had to be re-applied after every flash.
+#
+# PAYLOAD_LEN disambiguates: two nested defaults are both named "Setup" --
+# varstore 1 (511-byte payload, 308 knobs) and varstore 13 (7-byte payload) --
+# and the nested GUID indices do not resolve against the store's GUID table, so
+# the length is the only usable key. nvarsurgeon refuses an ambiguous or
+# out-of-range write rather than guessing.
+#
+#   Setup[0x0008] = 0x01  PTT005  Network Stack Driver Support = Enabled.
+#                         Gates the whole UEFI network stack: "If Disabled,
+#                         NetWork Stack Driver will be skipped". Without it
+#                         there is no PXE boot entry for an IPMI boot override
+#                         to select.
+#   Setup[0x01EE] = 0x02  BFOL000/BFOL001  Boot From Onboard LAN(X550) =
+#                         "Onboard LAN UEFI PXE" (0x00 Disabled, 0x04 LAN1 PXE,
+#                         0x05 LAN2 PXE, 0x02 UEFI PXE). Both knob names share
+#                         this byte; they are the CSM and UEFI presentations of
+#                         the same setting.
+#   PCI_COMMON[3] = 0x01  Above 4G Decoding = Enabled. The Tesla K80's ~12 GiB
+#                         prefetchable BARs do not fit below 4 GiB; without this
+#                         the board wedges at POST 0x99 with no console.
+#   PCI_COMMON[5] = 0x00  SR-IOV = Disabled. Already the default; pinned because
+#                         it feeds the same resource pressure as Above 4G.
+#
+# NetworkStackVar already defaults to 01/01/01 (stack, IPv4 PXE, IPv6 PXE), so
+# it needs nothing -- the entries below are asserted as a regression check and
+# report "already" rather than changing anything.
+HOST_BIOS_NVAR_DEFAULTS ?= "\
+    Setup:511:0x0008:0x01 \
+    Setup:511:0x01EE:0x02 \
+    PCI_COMMON:8:3:0x01 \
+    PCI_COMMON:8:5:0x00 \
+    NetworkStackVar:8:0:0x01 \
+    NetworkStackVar:8:1:0x01 \
+"
 
 # Produces no rootfs packages; this is a deploy-only firmware artifact.
 do_package[noexec] = "1"
@@ -187,6 +267,22 @@ do_compile() {
         fi
     done
 
+    # Drop VfrCompile from the BaseTools tool list.
+    #
+    # BaseTools builds it unconditionally, and its bundled PCCTS/ANTLR sources do
+    # not compile with a modern GCC:
+    #
+    #   VfrLexer.cpp:1654:1: error: 'ANTLRTokenType' does not name a type;
+    #                               did you mean 'ANTLRTokenPtr'?
+    #
+    # This does not bite on an incremental build, because a previously-built
+    # BaseTools is reused -- it only surfaces after a clean, which is how it went
+    # unnoticed until now. OpenOobPkg has no .vfr/.uni/.idf sources and no INF
+    # references any, so the VFR compiler is never invoked; carrying a patch for
+    # a compiler we do not use would be pure liability. It appears exactly once
+    # in the makefile, in the APPLICATIONS list.
+    sed -i -e '/VfrCompile/d' "${EDK_TOOLS_PATH}/Source/C/GNUmakefile"
+
     oe_runmake -C "${EDK_TOOLS_PATH}" \
         CC="${BUILD_CC}" \
         CXX="${BUILD_CXX}" \
@@ -213,13 +309,34 @@ do_compile() {
 
     printf '\006\010' > "${TRUE_DEPEX}"
 
+    # Displace one FFS slot per OOB_REPLACE_SLOTS entry. Each needs two passes:
+    # section type 10 (PE32) then 13 (DXE dependency), the latter forced to a
+    # bare TRUE so the replacement never inherits the original's DEPEX -- which
+    # would otherwise make our driver wait on protocols only the AMI module it
+    # replaced ever cared about.
     rm -f "${PE32_ROM}" "${OUT}"
-    "${UEFIREPLACE}" "${STOCK}" "${TARGET_FFS_GUID}" 10 "${EFI}" \
-        -o "${PE32_ROM}" -all || \
-        bbfatal "UEFIReplace failed to replace the PE32 section"
-    "${UEFIREPLACE}" "${PE32_ROM}" "${TARGET_FFS_GUID}" 13 "${TRUE_DEPEX}" \
-        -o "${OUT}" -all || \
-        bbfatal "UEFIReplace failed to replace the DXE dependency section"
+    SRC="${STOCK}"
+    for pair in ${OOB_REPLACE_SLOTS}; do
+        drv="${pair%%:*}"
+        slot="${pair##*:}"
+        src_efi="${EFIDIR}/${drv}.efi"
+        [ -f "${src_efi}" ] || bbfatal "OOB_REPLACE_SLOTS names ${drv}, but ${src_efi} was not built"
+
+        "${UEFIREPLACE}" "${SRC}" "${slot}" 10 "${src_efi}" \
+            -o "${PE32_ROM}" -all || \
+            bbfatal "UEFIReplace failed to replace the PE32 section of ${slot} (${drv})"
+        "${UEFIREPLACE}" "${PE32_ROM}" "${slot}" 13 "${TRUE_DEPEX}" \
+            -o "${OUT}" -all || \
+            bbfatal "UEFIReplace failed to replace the DXE dependency section of ${slot} (${drv})"
+
+        bbnote "displaced FFS ${slot} with ${drv}.efi ($(stat -c%s "${src_efi}") bytes)"
+        # Chain: this pass's output is the next pass's input. Copy rather than
+        # rename so ${OUT} is always the final artefact.
+        cp -f "${OUT}" "${WORKDIR}/.replace-chain.rom"
+        SRC="${WORKDIR}/.replace-chain.rom"
+        rm -f "${PE32_ROM}"
+    done
+    rm -f "${WORKDIR}/.replace-chain.rom"
 
     OSZ="$(stat -c%s "${OUT}")"
     [ "${OSZ}" = "${HOST_BIOS_SIZE}" ] || \
@@ -331,6 +448,22 @@ PYEOF
         SSZ2="$(stat -c%s "${STRIPPED}")"
         [ "${SSZ2}" = "${HOST_BIOS_SIZE}" ] || \
             bbfatal "stripped ROM is ${SSZ2} bytes, must be exactly ${HOST_BIOS_SIZE} (32 MiB)"
+
+        # Bake the Setup defaults that are boot requirements into the NVAR store.
+        if [ -n "${HOST_BIOS_NVAR_DEFAULTS}" ]; then
+            NVAR_ARGS=""
+            for spec in ${HOST_BIOS_NVAR_DEFAULTS}; do
+                NVAR_ARGS="${NVAR_ARGS} --set ${spec}"
+            done
+            python3 "${UNPACKDIR}/tools/nvarsurgeon.py" "${STRIPPED}" \
+                ${NVAR_ARGS} --out "${STRIPPED}.nvar" || \
+                bbfatal "nvarsurgeon failed to apply HOST_BIOS_NVAR_DEFAULTS"
+            mv -f "${STRIPPED}.nvar" "${STRIPPED}"
+
+            NSZ="$(stat -c%s "${STRIPPED}")"
+            [ "${NSZ}" = "${HOST_BIOS_SIZE}" ] || \
+                bbfatal "NVAR-patched ROM is ${NSZ} bytes, must be ${HOST_BIOS_SIZE}"
+        fi
 
         # Confirm each injected driver is present and locatable in the result, and
         # that our SmbiosBmcPushDxe slot survived the strip.

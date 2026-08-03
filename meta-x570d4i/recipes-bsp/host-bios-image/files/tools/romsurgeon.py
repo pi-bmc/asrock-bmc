@@ -276,6 +276,65 @@ class InnerVolume:
         self.fv[tail:start + len(entries) * 16] = b"\x00" * (16 * len(removed))
         return removed
 
+    def prepend_apriori(self, guid_texts):
+        """
+        Insert GUIDs at the FRONT of the DXE apriori list, ahead of everything
+        already there.
+
+        Why the front specifically: the DXE core dispatches every apriori entry,
+        in order, BEFORE it evaluates a single DEPEX. A driver we inject has
+        DEPEX=TRUE, which only makes it eligible in the first ordinary dispatch
+        round -- still after the whole apriori list has run. That is too late for
+        any apriori module that resolves a protocol once and caches the pointer,
+        because it will have already given up.
+
+        This is a general ordering primitive. Use it when an apriori module needs
+        a protocol one of our drivers produces.
+
+        HISTORY -- read before assuming this fixes boot overrides. It was added to
+        restore AMI Bds's Get/Set System Boot Options traffic (netfn 0x00 cmd
+        0x09/0x08, parameters 0/4/5), which disappears under strip-oob. IT DID
+        NOT FIX THAT, and the reasoning behind it was wrong: Bds's boot-option
+        path is gated on
+            gBS->LocateHandleBuffer(ByProtocol, 7ECA5AF9-A781-414E-AE4D-76B1ED203B83)
+        at Bds+0xa2c8, and it runs the IPMI path only when that protocol is
+        ABSENT (Bds+0xa832 `jns` skips to the exit on success). The transport
+        LocateProtocol happens AFTER that gate, at Bds+0xa84f -- so transport
+        availability, and therefore dispatch order, was never the deciding
+        factor. Verified on hardware: with OobIpmiDxe prepended, a boot still
+        produced 230 IPMI requests and zero netfn 0x00.
+
+        Capacity: the file's byte length is left unchanged so the FFS chain does
+        not shift, exactly as prune_apriori does. That means inserts have to fit
+        in the slots the prune freed. Overflowing would push a real entry off the
+        end and break dispatch silently, so raise instead.
+        """
+        start, entries = self.apriori_entries()
+        if start is None:
+            return None
+
+        capacity = len(entries)
+        zero = "00000000-0000-0000-0000-000000000000"
+        live = [g for g in entries if g.lower() != zero]
+        have = {g.lower() for g in live}
+        new = [g for g in guid_texts if g.lower() not in have]
+        if not new:
+            return []
+
+        combined = new + live
+        if len(combined) > capacity:
+            raise RuntimeError(
+                f"DXE apriori has {capacity} slots holding {len(live)} live "
+                f"entries; cannot prepend {len(new)} more without dropping one. "
+                f"Strip a module that is named in the apriori first."
+            )
+
+        for i, guid in enumerate(combined):
+            self.fv[start + i * 16:start + (i + 1) * 16] = guid_to_le(guid)
+        tail = start + len(combined) * 16
+        self.fv[tail:start + capacity * 16] = b"\x00" * (16 * (capacity - len(combined)))
+        return new
+
     def add_driver(self, guid_text, pe32, ui_name):
         """
         Append a new DXE driver FFS (DEPEX=TRUE) at the start of the trailing
@@ -455,6 +514,26 @@ def cmd_apply(args):
             off, total = vol.add_driver(item["guid"], pe32, item["name"])
             print(f"  add   {item['name']:34} 0x{off:06x}  {total:7} bytes")
         added += 1
+
+    # -- put chosen drivers at the head of the DXE apriori --------------
+    # After inject, so we only ever name a driver that actually landed.
+    first = profile.get("apriori_first", [])
+    if first:
+        by_name = {i["name"]: i["guid"] for i in profile.get("inject", [])}
+        guids, unknown = [], []
+        for name in first:
+            (guids.append(by_name[name]) if name in by_name else unknown.append(name))
+        for name in unknown:
+            print(f"\n  WARN  apriori_first names {name!r}, which is not in inject — ignored")
+        if guids and not args.dry_run:
+            done = vol.prepend_apriori(guids)
+            if done:
+                print(f"\nDXE apriori — prepended {', '.join(first[:len(done)])} "
+                      f"(dispatches before every stock apriori entry, incl. Bds)")
+            else:
+                print("\nDXE apriori — requested entries already present, unchanged")
+        elif guids:
+            print(f"\nwould prepend to DXE apriori: {', '.join(first)}")
 
     print(f"\n{removed} removed ({freed} bytes of FFS), {added} injected, {kept} not found")
 

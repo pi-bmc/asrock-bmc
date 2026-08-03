@@ -122,30 +122,44 @@ strip:
       - { name: SmmBmcElog,           guid: 543323ce-9f0c-4ddf-a33c-bc3b3a5ac227 }
 
   # =========================================================================
-  # TIER 2 — AMI's DXE IPMI transport. Enabled 2026-08-03.
+  # TIER 2 — AMI's DXE IPMI transport. REMOVED AS A STRIP GROUP 2026-08-03.
   # =========================================================================
-  - group: ipmi-transport
-    why: >
-      DxeIpmiBmcInitialize is the sole producer of the AMI DXE IPMI transport
-      4A1D0E66 and 15 modules DEPEX on it, so removing it used to strand every
-      one of them.
+  #
+  # DxeIpmiBmcInitialize (6372357a) is no longer deleted here. The recipe now
+  # DISPLACES its FFS slot with OobIpmiDxe via UEFIReplace (OOB_REPLACE_SLOTS),
+  # exactly as it already did for SendInfoBmcIpmiDxe. Stripping it would delete
+  # our own driver, since by the time romsurgeon runs that GUID IS OobIpmiDxe.
+  #
+  # Displacing is strictly better than the previous delete-then-inject: 6372357a
+  # is entry 7 of the 15-entry DXE apriori, so keeping the GUID keeps the
+  # apriori entry valid and gives OobIpmiDxe the stock dispatch position. The
+  # injected-as-new-FFS version had DEPEX=TRUE and could not run until after the
+  # whole apriori list, and the apriori_first workaround that tried to correct
+  # for it put OobIpmiDxe at position 0 — ahead of StatusCodeDxe, PcdDxe and
+  # NvramDxe, which is earlier than anything needs to be.
+  #
+  # - group: ipmi-transport
+  #   why: >
+      # DxeIpmiBmcInitialize is the sole producer of the AMI DXE IPMI transport
+      # 4A1D0E66 and 15 modules DEPEX on it, so removing it used to strand every
+      # one of them.
 
-      OobIpmiDxe now PUBLISHES THAT PROTOCOL FOR REAL rather than as a NULL
-      presence marker. The struct layout was recovered from this exact ROM —
-      the publisher installs `context + 0x120` from a 0x178-byte
-      AllocateZeroPool block, and SerialMuxControl is observed calling
-      `[This + 0x10]` with (NetFn=6, Lun=0, Cmd=0x42) — so SendIpmiCommand,
-      GetBmcStatus and SendIpmiCommandEx now sit at the offsets the shipping
-      consumers actually dereference. Full derivation, with addresses, is in
-      OpenOobPkg/Include/Protocol/AmiIpmiTransport.h.
+      # OobIpmiDxe now PUBLISHES THAT PROTOCOL FOR REAL rather than as a NULL
+      # presence marker. The struct layout was recovered from this exact ROM —
+      # the publisher installs `context + 0x120` from a 0x178-byte
+      # AllocateZeroPool block, and SerialMuxControl is observed calling
+      # `[This + 0x10]` with (NetFn=6, Lun=0, Cmd=0x42) — so SendIpmiCommand,
+      # GetBmcStatus and SendIpmiCommandEx now sit at the offsets the shipping
+      # consumers actually dereference. Full derivation, with addresses, is in
+      # OpenOobPkg/Include/Protocol/AmiIpmiTransport.h.
 
-      Consequently PcieInfoJudgeDxe (b603a688) and SerialMuxControl (129f6aa7)
-      are NO LONGER part of this group. They were only ever listed here because
-      the marker's NULL interface would have faulted them; with a working vtable
-      they keep their behaviour and stay in the image. DefaultOverride (a647e4e4)
-      never dereferenced the protocol at all and was always safe.
-    modules:
-      - { name: DxeIpmiBmcInitialize, guid: 6372357a-06d7-43ef-b55c-1964f3dd6916 }
+      # Consequently PcieInfoJudgeDxe (b603a688) and SerialMuxControl (129f6aa7)
+      # are NO LONGER part of this group. They were only ever listed here because
+      # the marker's NULL interface would have faulted them; with a working vtable
+      # they keep their behaviour and stay in the image. DefaultOverride (a647e4e4)
+      # never dereferenced the protocol at all and was always safe.
+    # modules:
+      # - { name: DxeIpmiBmcInitialize, guid: 6372357a-06d7-43ef-b55c-1964f3dd6916 }
 
   # =========================================================================
   # TIER 3 — needs a decision or a replacement first. NOT ENABLED.
@@ -214,9 +228,6 @@ inject:
   - name: BiosCfgOobDxe
     efi:  BiosCfgOobDxe.efi
     guid: 9b3c62d1-4e78-4a05-8f21-6c07ae5db934
-  - name: OobIpmiDxe
-    efi:  OobIpmiDxe.efi
-    guid: 7a41c5e2-30d9-4b17-a8f6-0c2e94b7d513
   - name: VideoRouteDxe
     efi:  VideoRouteDxe.efi
     guid: c17b6e94-4a25-4d83-9f0b-6e83d2a10c57
@@ -226,3 +237,26 @@ inject:
   - name: OobSetupDefaultsDxe
     efi:  OobSetupDefaultsDxe.efi
     guid: 53c918ae-6f3b-4db5-aa69-c028199a6df7
+
+# ---------------------------------------------------------------------------
+# Dispatch order: OobIpmiDxe must beat the stock apriori
+# ---------------------------------------------------------------------------
+# The DXE core runs every apriori entry, in order, BEFORE evaluating any DEPEX.
+# An injected driver has DEPEX=TRUE, which only makes it eligible in the first
+# ordinary round -- still after the entire apriori list. That is too late for an
+# apriori module that resolves a protocol once and caches the pointer.
+#
+# Kept because deterministic ordering for the sole producer of 4A1D0E66 is
+# cheap and sane once DxeIpmiBmcInitialize is stripped.
+#
+# BUT NOTE WHAT IT DOES NOT DO. This was added to restore AMI Bds's Get/Set
+# System Boot Options traffic (netfn 0x00 cmd 0x09/0x08, parameters 0
+# Set-In-Progress, 4 Boot-Info-Acknowledge, 5 Boot-Flags), which vanishes under
+# strip-oob. It did not work, and the hypothesis behind it was wrong. Bds gates
+# that whole path on
+#     gBS->LocateHandleBuffer(ByProtocol, 7ECA5AF9-A781-414E-AE4D-76B1ED203B83)
+# at Bds+0xa2c8 and runs it only when that protocol is ABSENT; the transport
+# LocateProtocol is downstream of the gate at Bds+0xa84f, so dispatch order was
+# never the deciding factor. Hardware: prepended and still 0 netfn 0x00 in 230
+# requests. IPMI/Redfish boot overrides remain non-functional on strip-oob --
+# unresolved, do not assume this line addresses it.

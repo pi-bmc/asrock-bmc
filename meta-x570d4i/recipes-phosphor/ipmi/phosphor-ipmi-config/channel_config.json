@@ -55,17 +55,5 @@
             "session_supported": "session-less",
             "is_ipmi": true
         }
-    },
-    "8": {
-        "name": "usb0",
-        "is_valid": true,
-        "active_sessions": 0,
-        "max_transfer_size": 256,
-        "channel_info": {
-            "medium_type": "lan-802.3",
-            "protocol_type": "ipmb-1.0",
-            "session_supported": "multi-session",
-            "is_ipmi": true
-        }
     }
 }
