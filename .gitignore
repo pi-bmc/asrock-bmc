@@ -13,3 +13,7 @@ customrc
 compile_commands.json
 openbmc
 .vscode-ctags*
+
+# Python bytecode from running the host-BIOS ROM tooling in-tree
+__pycache__/
+*.pyc

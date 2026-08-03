@@ -1,0 +1,69 @@
+name: inject-only
+description: >
+  Make room for our standalone drivers with the smallest, safest removal
+  available, and graft them in. Does NOT touch AMI's IPMI transport, watchdog,
+  SEL, PLDM or board-inventory modules — use strip-oob.yaml for that.
+
+# ---------------------------------------------------------------------------
+# Why this profile exists
+# ---------------------------------------------------------------------------
+# SmbiosBmcPushDxe reaches the flash by REPLACING the AMI SendInfoBmcIpmiDxe FFS
+# slot, so it needs no free space. The other three drivers are added as NEW FFS
+# files, and the dispatched firmware volume ships with only 2,416 bytes free —
+# nowhere near enough. Something has to go first.
+#
+# So this profile removes exactly one group: AMI's BIOS-side Redfish/REST stack.
+# That is the lowest-risk removal in the whole image:
+#
+#   * every module in it is a leaf — nothing outside the group DEPEXes on any
+#     protocol they install;
+#   * OpenBMC already provides the Redfish service, so a second client inside
+#     the BIOS is duplicated work, not a feature;
+#   * it frees ~384 KiB, an order of magnitude more than the ~31 KiB the three
+#     injected drivers need.
+#
+# The one non-obvious member is FirmwareConfigDrv — see the note below.
+# ---------------------------------------------------------------------------
+
+strip:
+  - group: redfish
+    why: >
+      AMI's BIOS-side Redfish client: host-interface discovery, REST transport,
+      inventory push, TLS cert store, SecureBoot-over-Redfish. All leaves, and
+      all redundant against OpenBMC's own Redfish service. ~384 KiB.
+    modules:
+      - { name: RfInventory,        guid: ab78d6a5-7e2a-47aa-9f32-780793c0dadb }
+      - { name: RedfishHi,          guid: cef05965-f399-42a0-a226-a3fe96aa944e }
+      - { name: RfTlsCertificates,  guid: 4239aa07-8de8-4c67-a971-c6f3f56d7f93 }
+      - { name: AmiRedfishDynExt,   guid: 3b1de95d-1e5a-4984-9c19-920e21dcec28 }
+      - { name: RfSecureBoot,       guid: 594ac308-8819-4284-b661-b7570881cc0f }
+      - { name: RestBoot,           guid: ebc065d8-befa-4437-bed0-9a41272102f1 }
+      - { name: UefiRestNetwork,    guid: 54b34347-c478-4865-8415-742e5155b204 }
+      - { name: RfTrustedModules,   guid: d080f93d-c0e8-47d6-9201-6b0ef6e28e1a }
+      - { name: AmiRedFishApi,      guid: d4395796-6f4c-4c6b-b9d1-92daa7199a84 }
+      - { name: RfAutoGen,          guid: f56f984f-3846-49d8-aa0a-23de27e38386 }
+      # MANDATORY member, not optional. FirmwareConfigDrv's DEPEX pushes
+      # gEfiRestProtocol (0DB48A36) as its FIRST term, and UefiRestNetwork above
+      # is that protocol's only producer. Remove UefiRestNetwork without this and
+      # FirmwareConfigDrv is hard-blocked: it never dispatches, silently. It is
+      # itself part of this stack (18 REST references, installs nothing, nothing
+      # depends on it), so it belongs here.
+      - { name: FirmwareConfigDrv,  guid: 1c5c6e7e-552a-443e-9a04-7408adee99d3 }
+
+# ---------------------------------------------------------------------------
+# Note there is deliberately no SendInfoBmcIpmiDxe (9df02dfd) entry anywhere in
+# this file. The recipe's UEFIReplace step has already repurposed that slot for
+# SmbiosBmcPushDxe by the time romsurgeon runs, so stripping it would delete our
+# own driver.
+# ---------------------------------------------------------------------------
+
+inject:
+  - name: BiosCfgOobDxe
+    efi:  BiosCfgOobDxe.efi
+    guid: 9b3c62d1-4e78-4a05-8f21-6c07ae5db934
+  - name: OobIpmiDxe
+    efi:  OobIpmiDxe.efi
+    guid: 7a41c5e2-30d9-4b17-a8f6-0c2e94b7d513
+  - name: VideoRouteDxe
+    efi:  VideoRouteDxe.efi
+    guid: c17b6e94-4a25-4d83-9f0b-6e83d2a10c57

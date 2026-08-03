@@ -1,0 +1,28 @@
+## @file
+#  OobTelemetryLib — persist driver progress to an NV UEFI variable so the BMC
+#  can read it out of the SPI flash after the fact.
+#
+#  Copyright (c) 2026, ASRock Rack X570D4I-2T OpenBMC port.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = OobTelemetryLib
+  FILE_GUID                      = 2f6b8d14-93c7-4e0a-8b71-5a0c2e9d6f38
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = OobTelemetryLib|DXE_DRIVER
+
+[Sources]
+  OobTelemetryLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  OpenOobPkg/OpenOobPkg.dec
+
+[LibraryClasses]
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+  BaseLib
+  BaseMemoryLib

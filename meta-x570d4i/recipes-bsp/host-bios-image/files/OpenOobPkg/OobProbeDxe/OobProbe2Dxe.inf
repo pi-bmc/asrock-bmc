@@ -1,0 +1,63 @@
+## @file
+#  OobProbe2Dxe — a second instance of OobProbeDxe, identical source, different
+#  FILE_GUID.
+#
+#  It is a control, not a feature. On 2026-07-30 three drivers were injected
+#  into consecutive slots of the outer FVMAIN_COMPACT free space and the middle
+#  one (SmbiosBmcPushDxe) left no trace at all, while the ones before and after
+#  it both recorded their entry. That leaves two explanations — something about
+#  that slot, or something about that module — and they call for opposite fixes.
+#
+#  So this build is dropped into the slot the failing module occupied. Known-good
+#  code in the suspect position: if it records an entry, the slot is fine and the
+#  fault is in the module; if it stays silent too, the position is the problem.
+#
+#  Because the variable name is compiled in as L"OobProbe", both instances write
+#  a variable of that name — but each uses its own FILE_GUID as the vendor GUID,
+#  so AMI gives them separate NVAR entries and tools/probecheck.py tells them
+#  apart by the CallerId inside the record.
+#
+#  Delete this once the question is settled.
+#
+#  Copyright (c) 2026, ASRock Rack X570D4I-2T OpenBMC port.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = OobProbe2Dxe
+  FILE_GUID                      = 5e8a3c07-2b14-4d69-a0f3-71cc94e2b8d5
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = OobProbeEntry
+
+[Sources]
+  OobProbeDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  OpenOobPkg/OpenOobPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+  UefiLib
+  BaseLib
+  BaseMemoryLib
+  IoLib
+  DebugLib
+
+[Protocols]
+  gEfiVariableWriteArchProtocolGuid   ## CONSUMES  ## NOTIFY
+  gEfiGraphicsOutputProtocolGuid      ## CONSUMES  ## Console census
+  gEfiSimpleTextOutProtocolGuid       ## CONSUMES  ## Console census
+  gEfiUgaDrawProtocolGuid             ## CONSUMES  ## Console census
+  gEfiPciIoProtocolGuid               ## CONSUMES  ## Console census
+
+[Guids]
+  gEfiEndOfDxeEventGroupGuid          ## CONSUMES  ## Event
+  gEfiEventReadyToBootGuid            ## CONSUMES  ## Event
+
+[Depex]
+  TRUE

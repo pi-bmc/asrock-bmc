@@ -1,0 +1,435 @@
+SUMMARY = "Patched host BIOS image (ASRock X570D4I-2T 2.59C + BMC push driver)"
+DESCRIPTION = "\
+Fetches upstream EDK2, builds the local host->BMC push driver as an X64 \
+DXE_DRIVER, downloads the stock ASRock X570D4I-2T 2.59C AMI Aptio BIOS image, \
+and injects the built module with LongSoft UEFIReplace.  The patch replaces the \
+PE32 and DXE dependency sections of AMI SendInfoBmcIpmiDxe \
+(FILE_GUID 9DF02DFD-8CF7-4FC7-B8AE-CBD9560A3F24) in all duplicate firmware \
+volume copies.  The finished ROM is asserted to remain exactly 32 MiB.\
+\
+The injected driver has two halves: SmbiosBmcPushDxe (SMBIOS over \
+phosphor-ipmi-blobs) and BiosCfgOobDxe, the host side of the OpenBMC \
+BIOS-config OOB command set (NetFn 0x30, cmds 0xD3-0xD6).  The stock BIOS has \
+no BIOS-config producer of its own -- verified by decompiling both 2.59C and \
+2.59F: stock SendInfoBmcIpmiDxe is 3 KB and never issues 0xD3/0xD5, and no \
+module in either image contains the XML the BMC receives.  BiosCfgOobDxe \
+supplies it, and unlike the earlier ad-hoc build it also reports the LIVE knob \
+values read with gRT->GetVariable and applies settings staged from Redfish.\
+\
+Sources live in files/OpenOobPkg, one subdirectory per driver, built together \
+from OpenOobPkg.dsc.  Besides the module above it produces two standalone \
+drivers that are grafted in as NEW FFS files rather than displacing an AMI \
+slot: OobIpmiDxe (an IPMI-over-KCS transport that also publishes AMI's \
+transport GUID 4A1D0E66 as a compatibility marker, so DxeIpmiBmcInitialize \
+becomes removable without stranding the 15 modules that DEPEX on it) and \
+VideoRouteDxe (per-boot video path selection; defaults to the onboard ASPEED \
+and opens the ASPEED GOP dispatch gate 794E15D9 that the stock Setup policy \
+leaves shut).\
+\
+Setting HOST_BIOS_STRIP_OOB = \"1\" additionally runs tools/romsurgeon.py to \
+delete AMI's Redfish, PLDM and SMM-BMC modules and inject those two drivers.  \
+It is off by default: that image has never been booted, and a stranded DEPEX \
+fails silently.  See edk2-x570d4i2t/docs/STRIP-PLAN.md.\
+"
+
+# The deliverable is the proprietary ASRock/AMI Aptio BIOS image (redistribution
+# governed by ASRock) with our BSD-2-Clause-Patent SmbiosBmcPushDxe injected;
+# treat the resulting firmware blob as CLOSED.
+LICENSE = "CLOSED"
+
+COMPATIBLE_MACHINE = "x570d4i2t"
+PACKAGE_ARCH = "${MACHINE_ARCH}"
+
+inherit deploy
+
+SRC_URI = " \
+    gitsm://github.com/tianocore/edk2.git;branch=master;protocol=https;name=edk2;destsuffix=edk2 \
+    https://github.com/LongSoft/UEFITool/releases/download/0.28.0/UEFIReplace_0.28.0_linux_x86_64.zip;name=uefireplace;downloadfilename=UEFIReplace_0.28.0_linux_x86_64.zip \
+    https://download.asrock.com/BIOS/Server/X570D4I-2T(2.59C)ROM.zip;name=bios;downloadfilename=x570d4i2t-bios-2.59C.zip \
+    file://OpenOobPkg \
+    file://tools \
+    file://x570d4i2t-bios-knobs.xml \
+    file://gen-schema-header.py \
+"
+
+# edk2-stable202602, matching the OpenBMC meta-arm edk2-basetools-native pin.
+SRCREV_edk2 ?= "b7a715f7c03c45c6b4575bf88596bfd79658b8ce"
+SRCREV_FORMAT = "edk2"
+
+SRC_URI[bios.sha256sum] = "712fa89eda6334f9e1563217be1fe83d2d66a72b7958bb6984dce70221ac1175"
+SRC_URI[uefireplace.sha256sum] = "3b8df98d9f3d10be2c33c9cbcd03237a99727fdf5eb6988bce23f7da8b39f432"
+
+# python3-pyyaml-native: romsurgeon.py reads the strip/inject profile. Only needed
+# when HOST_BIOS_STRIP_OOB is enabled, but keeping it unconditional avoids a
+# confusing late failure after the EDK2 build has already run.
+DEPENDS = "python3-native python3-pyyaml-native util-linux-native nasm-native"
+
+S = "${UNPACKDIR}/edk2"
+B = "${WORKDIR}/build-edk2"
+
+export WORKSPACE = "${B}"
+export PACKAGES_PATH = "${B}:${S}"
+export EDK_TOOLS_PATH = "${S}/BaseTools"
+export CONF_PATH = "${B}/Conf"
+export PYTHON_COMMAND = "python3"
+export GCC5_X64_PREFIX = ""
+
+BTOOLS_PATH = "${EDK_TOOLS_PATH}/BinWrappers/PosixLike"
+
+# EDK2 drives its own compiler/linker flags.  OE target flags are for the BMC
+# rootfs toolchain and are not meaningful for this host-built X64 EFI binary.
+LDFLAGS[unexport] = "1"
+CFLAGS[unexport] = "1"
+CXXFLAGS[unexport] = "1"
+CPPFLAGS[unexport] = "1"
+
+ROM_NAME ?= "X574I2T2.59C"
+PATCHED_ROM ?= "host-bios-${MACHINE}-2.59C-smbiospush.rom"
+HOST_BIOS_SIZE ?= "33554432"
+TARGET_FFS_GUID ?= "9df02dfd-8cf7-4fc7-b8ae-cbd9560a3f24"
+UEFIREPLACE ?= "${UNPACKDIR}/UEFIReplace"
+TRUE_DEPEX ?= "${WORKDIR}/true.depex"
+
+# Every driver OpenOobPkg.dsc produces.
+OOB_DRIVERS ?= "SmbiosBmcPushDxe BiosCfgOobDxe OobIpmiDxe VideoRouteDxe"
+
+# Drivers grafted in as NEW FFS files, i.e. everything except SmbiosBmcPushDxe,
+# which reaches the flash by displacing the AMI SendInfoBmcIpmiDxe slot instead.
+# Only used when HOST_BIOS_STRIP_OOB is enabled.
+OOB_INJECT_DRIVERS ?= "BiosCfgOobDxe OobIpmiDxe VideoRouteDxe"
+
+# Run tools/romsurgeon.py to free space in the dispatched firmware volume and
+# graft in OOB_INJECT_DRIVERS.
+#
+# OFF BY DEFAULT, deliberately: the UEFIReplace-only image below is the path that
+# has actually run on hardware, whereas neither profile has ever been booted, and
+# a stranded DEPEX fails silently — the dependent never dispatches. On a board
+# whose only console is the KVM, that is a blind hang. Enable per-build once you
+# can recover over the SPI mux:  HOST_BIOS_STRIP_OOB = "1"
+#
+# NOTE the consequence of splitting BiosCfgOobDxe out of SmbiosBmcPushDxe: it is
+# now its own FFS file, so with this disabled the BIOS-config OOB producer does
+# NOT reach the flash and /redfish/v1/Systems/system/Bios goes back to being a
+# defaults listing. do_compile warns about this explicitly.
+HOST_BIOS_STRIP_OOB ?= "0"
+
+# Which profile to use when enabled:
+#   inject-only  strips ONLY AMI's Redfish/REST stack (~384 KiB of leaf modules,
+#                zero dependents) to make room, then injects. Lowest risk.
+#   strip-oob    additionally removes PLDM, the SMM BMC island and assorted BMC
+#                feature drivers. Bigger win, more blast radius.
+HOST_BIOS_OOB_PROFILE ?= "inject-only"
+STRIP_PROFILE ?= "${UNPACKDIR}/tools/profiles/${HOST_BIOS_OOB_PROFILE}.yaml"
+STRIPPED_ROM ?= "host-bios-${MACHINE}-2.59C-openoob.rom"
+
+# Produces no rootfs packages; this is a deploy-only firmware artifact.
+do_package[noexec] = "1"
+do_packagedata[noexec] = "1"
+do_package_write_ipk[noexec] = "1"
+do_populate_sysroot[noexec] = "1"
+
+do_configure[cleandirs] += "${B}"
+do_configure() {
+    install -d "${B}/Conf"
+
+    # Lay the package out as an EDK2 package inside the workspace. PACKAGES_PATH
+    # includes ${B}, so INF/DEC references resolve as OpenOobPkg/... exactly as
+    # they are written in OpenOobPkg.dsc.
+    [ -d "${UNPACKDIR}/OpenOobPkg" ] || \
+        bbfatal "OpenOobPkg not unpacked to ${UNPACKDIR}; check the file://OpenOobPkg SRC_URI entry"
+    [ -f "${UNPACKDIR}/OpenOobPkg/OpenOobPkg.dsc" ] || \
+        bbfatal "OpenOobPkg.dsc missing from ${UNPACKDIR}/OpenOobPkg"
+    [ -f "${UNPACKDIR}/tools/romsurgeon.py" ] || \
+        bbfatal "tools/ not unpacked to ${UNPACKDIR}; check the file://tools SRC_URI entry"
+
+    cp -R "${UNPACKDIR}/OpenOobPkg" "${B}/OpenOobPkg"
+    chmod -R u+w "${B}/OpenOobPkg"
+
+    # The knob schema is a build input, not a checked-in binary: the readable XML
+    # is compressed and turned into a C array here.  Reproducibility is
+    # load-bearing -- the DXE quotes the resulting length and CRC32 to the BMC so
+    # it can skip re-sending a payload the BMC already holds.
+    python3 "${UNPACKDIR}/gen-schema-header.py" \
+        "${UNPACKDIR}/x570d4i2t-bios-knobs.xml" \
+        "${B}/OpenOobPkg/BiosCfgOobDxe/BiosCfgOobSchema.h" || \
+        bbfatal "failed to generate BiosCfgOobSchema.h"
+
+    cp "${EDK_TOOLS_PATH}/Conf/build_rule.template" "${CONF_PATH}/build_rule.txt"
+    cp "${EDK_TOOLS_PATH}/Conf/tools_def.template" "${CONF_PATH}/tools_def.txt"
+    cp "${EDK_TOOLS_PATH}/Conf/target.template" "${CONF_PATH}/target.txt"
+}
+
+do_compile() {
+    STOCK="${UNPACKDIR}/${ROM_NAME}"
+    EFIDIR="${B}/Build/OpenOobPkg/RELEASE_GCC5/X64"
+    EFI="${EFIDIR}/SmbiosBmcPushDxe.efi"
+    PE32_ROM="${WORKDIR}/${ROM_NAME}.uefireplace-pe32"
+    OUT="${WORKDIR}/${PATCHED_ROM}"
+
+    [ -f "${STOCK}" ] || bbfatal "stock ROM not found after unpack: ${STOCK}"
+    [ -f "${UEFIREPLACE}" ] || bbfatal "UEFIReplace not found after unpack: ${UEFIREPLACE}"
+    chmod 0755 "${UEFIREPLACE}"
+
+    [ "$(uname -m)" = "x86_64" ] || \
+        bbfatal "UEFIReplace_0.28.0_linux_x86_64 requires an x86_64 build host"
+
+    SSZ="$(stat -c%s "${STOCK}")"
+    [ "${SSZ}" = "${HOST_BIOS_SIZE}" ] || \
+        bbfatal "stock ROM is ${SSZ} bytes, expected ${HOST_BIOS_SIZE} (32 MiB)"
+
+    if ! grep -q '\${BUILD_CFLAGS}' "${EDK_TOOLS_PATH}/Source/C/Makefiles/header.makefile"; then
+        sed -i -e 's:-I \.\.:-I \.\. ${BUILD_CFLAGS} :' \
+            "${EDK_TOOLS_PATH}/Source/C/Makefiles/header.makefile"
+    fi
+    for makefile in "${EDK_TOOLS_PATH}"/Source/C/*/GNUmakefile; do
+        if ! grep -q '\${BUILD_LDFLAGS}' "${makefile}"; then
+            sed -i -e 's: -luuid: -luuid ${BUILD_LDFLAGS}:g' "${makefile}"
+        fi
+    done
+
+    oe_runmake -C "${EDK_TOOLS_PATH}" \
+        CC="${BUILD_CC}" \
+        CXX="${BUILD_CXX}" \
+        AS="${BUILD_AS}" \
+        AR="${BUILD_AR}" \
+        LD="${BUILD_LD}"
+
+    # Build every component in the DSC, not just one module: OobIpmiDxe and
+    # VideoRouteDxe are separate drivers grafted in as their own FFS files.
+    PATH="${BTOOLS_PATH}:$PATH" \
+    build \
+        -p OpenOobPkg/OpenOobPkg.dsc \
+        -a X64 \
+        -b RELEASE \
+        -t GCC5 \
+        ${@oe.utils.parallel_make_argument(d, "-n %d")}
+
+    for m in ${OOB_DRIVERS}; do
+        [ -f "${EFIDIR}/${m}.efi" ] || bbfatal "EDK2 did not produce ${EFIDIR}/${m}.efi"
+        head -c2 "${EFIDIR}/${m}.efi" | grep -q MZ || \
+            bbfatal "${m}.efi is not a PE image"
+        bbnote "built ${m}.efi ($(stat -c%s "${EFIDIR}/${m}.efi") bytes)"
+    done
+
+    printf '\006\010' > "${TRUE_DEPEX}"
+
+    rm -f "${PE32_ROM}" "${OUT}"
+    "${UEFIREPLACE}" "${STOCK}" "${TARGET_FFS_GUID}" 10 "${EFI}" \
+        -o "${PE32_ROM}" -all || \
+        bbfatal "UEFIReplace failed to replace the PE32 section"
+    "${UEFIREPLACE}" "${PE32_ROM}" "${TARGET_FFS_GUID}" 13 "${TRUE_DEPEX}" \
+        -o "${OUT}" -all || \
+        bbfatal "UEFIReplace failed to replace the DXE dependency section"
+
+    OSZ="$(stat -c%s "${OUT}")"
+    [ "${OSZ}" = "${HOST_BIOS_SIZE}" ] || \
+        bbfatal "patched ROM is ${OSZ} bytes, must be exactly ${HOST_BIOS_SIZE} (32 MiB)"
+
+    python3 - "${OUT}" "${EFI}" <<'PYEOF' || \
+        bbfatal "UEFIReplace verification failed"
+import hashlib
+import lzma
+import struct
+import sys
+
+rom_path, efi_path = sys.argv[1], sys.argv[2]
+rom = open(rom_path, "rb").read()
+efi_hash = hashlib.sha256(open(efi_path, "rb").read()).digest()
+
+outer_guid = bytes.fromhex("93fd219e729c154c8c4be77f1db2d792")
+target_guid = bytes.fromhex("fd2df09df78cc74fb8aecbd9560a3f24")
+
+def u24(buf, off):
+    return buf[off] | (buf[off + 1] << 8) | (buf[off + 2] << 16)
+
+def parse_fv(fv):
+    if fv[0x28:0x2c] != b"_FVH":
+        raise RuntimeError("not an FV")
+    return struct.unpack_from("<H", fv, 0x30)[0], struct.unpack_from("<Q", fv, 0x20)[0]
+
+def find_ffs(fv, guid):
+    _, fv_len = parse_fv(fv)
+    off = 0
+    while True:
+        off = fv.find(guid, off)
+        if off < 0 or off + 24 > fv_len:
+            return None, None
+        if off % 8 == 0:
+            size = u24(fv, off + 20)
+            if 24 <= size <= fv_len:
+                return off, size
+        off += 1
+
+def inner_fv_from_outer(fv):
+    off, size = find_ffs(fv, outer_guid)
+    if off is None:
+        raise RuntimeError("outer compressed FFS not found")
+    ffs = fv[off:off + size]
+    sec = 24
+    while sec + 4 <= size:
+        sec_size = u24(ffs, sec)
+        if ffs[sec + 3] == 0x02:
+            data_off = struct.unpack_from("<H", ffs, sec + 20)[0]
+            return lzma.decompress(ffs[sec + data_off:sec + sec_size])[0x10:]
+        sec += (sec_size + 3) & ~3
+    raise RuntimeError("GUID-defined LZMA section not found")
+
+for base, size in ((0x0069f000, 0x808000), (0x01ac1000, 0x3e6000)):
+    inner = inner_fv_from_outer(rom[base:base + size])
+    off, ffs_size = find_ffs(inner, target_guid)
+    if off is None:
+        raise RuntimeError("target FFS not found in FV at 0x%x" % base)
+    ffs = inner[off:off + ffs_size]
+    sec = 24
+    found_pe32 = False
+    found_true_depex = False
+    while sec + 4 <= ffs_size:
+        sec_size = u24(ffs, sec)
+        sec_type = ffs[sec + 3]
+        body = ffs[sec + 4:sec + sec_size]
+        if sec_type == 0x10 and hashlib.sha256(body).digest() == efi_hash:
+            found_pe32 = True
+        if sec_type == 0x13 and body == b"\x06\x08":
+            found_true_depex = True
+        sec += (sec_size + 3) & ~3
+    if not found_pe32 or not found_true_depex:
+        raise RuntimeError("patched PE32/DEPEX missing in FV at 0x%x" % base)
+PYEOF
+
+    bbnote "Built SmbiosBmcPushDxe from upstream EDK2 and injected it with UEFIReplace; ${PATCHED_ROM} = ${OSZ} bytes."
+
+    # ---------------------------------------------------------------------
+    # Optional second stage: strip AMI's OOB stack and graft in the standalone
+    # drivers. Operates on the UEFIReplace output, so the SmbiosBmcPushDxe slot
+    # is already ours by this point -- which is exactly why the strip profile
+    # must NOT list 9df02dfd. See the note in tools/profiles/strip-oob.yaml.
+    # ---------------------------------------------------------------------
+    if [ "${HOST_BIOS_STRIP_OOB}" != "1" ]; then
+        bbwarn "HOST_BIOS_STRIP_OOB=0: only SmbiosBmcPushDxe is in ${PATCHED_ROM}."
+        bbwarn "  BiosCfgOobDxe, OobIpmiDxe and VideoRouteDxe are built and deployed to"
+        bbwarn "  openoob-drivers/ but NOT injected — adding FFS files needs free space in"
+        bbwarn "  the dispatched firmware volume, which needs a strip profile to run."
+        bbwarn "  In particular BIOS-config OOB is absent, so /redfish/v1/Systems/system/Bios"
+        bbwarn "  will report defaults rather than live values. Set HOST_BIOS_STRIP_OOB=1"
+        bbwarn "  (profile: ${HOST_BIOS_OOB_PROFILE}) to include them."
+    fi
+
+    if [ "${HOST_BIOS_STRIP_OOB}" = "1" ]; then
+        STRIPPED="${WORKDIR}/${STRIPPED_ROM}"
+        rm -f "${STRIPPED}"
+
+        [ -f "${STRIP_PROFILE}" ] || \
+            bbfatal "HOST_BIOS_OOB_PROFILE='${HOST_BIOS_OOB_PROFILE}' has no profile at ${STRIP_PROFILE}"
+
+        python3 "${UNPACKDIR}/tools/romsurgeon.py" apply \
+            --rom "${OUT}" \
+            --profile "${STRIP_PROFILE}" \
+            --efi-dir "${EFIDIR}" \
+            --out "${STRIPPED}" || \
+            bbfatal "romsurgeon failed to strip/inject the OOB stack"
+
+        SSZ2="$(stat -c%s "${STRIPPED}")"
+        [ "${SSZ2}" = "${HOST_BIOS_SIZE}" ] || \
+            bbfatal "stripped ROM is ${SSZ2} bytes, must be exactly ${HOST_BIOS_SIZE} (32 MiB)"
+
+        # Confirm each injected driver is present and locatable in the result, and
+        # that our SmbiosBmcPushDxe slot survived the strip.
+        python3 "${UNPACKDIR}/tools/romsurgeon.py" inspect --rom "${STRIPPED}" \
+            > "${WORKDIR}/openoob-inventory.txt" || \
+            bbfatal "romsurgeon could not re-parse the stripped ROM"
+
+        for m in ${OOB_INJECT_DRIVERS}; do
+            grep -q "  ${m} *$" "${WORKDIR}/openoob-inventory.txt" || \
+                bbfatal "${m} missing from the stripped ROM's FFS inventory"
+        done
+
+        # The repurposed slot is still LISTED as SendInfoBmcIpmiDxe: UEFIReplace
+        # swaps only the PE32 and DEPEX sections and leaves the FFS UI section
+        # alone, so the inventory shows AMI's name for what is now our driver.
+        # Checking for "SmbiosBmcPush" here would never match.
+        grep -q '  SendInfoBmcIpmiDxe *$' "${WORKDIR}/openoob-inventory.txt" || \
+            bbfatal "the 9df02dfd slot carrying SmbiosBmcPushDxe did not survive the strip"
+
+        # And prove the payload really is ours rather than the stock 3 KB module.
+        # The PE32 lives inside the LZMA-compressed inner FV, so this has to walk
+        # the volume rather than search the ROM for the raw image bytes.
+        python3 - "${STRIPPED}" "${EFI}" "${TARGET_FFS_GUID}" \
+            "${UNPACKDIR}/tools" <<'PYEOF' || \
+            bbfatal "the 9df02dfd slot does not contain our SmbiosBmcPushDxe PE32"
+import hashlib, sys, uuid
+sys.path.insert(0, sys.argv[4])
+import uefifv as P
+
+rom = open(sys.argv[1], "rb").read()
+want = hashlib.sha256(open(sys.argv[2], "rb").read()).digest()
+guid = uuid.UUID(sys.argv[3]).bytes_le
+
+outer = rom[P.FV_OFFSET:P.FV_OFFSET + P.FV_SIZE]
+off, size = P.find_ffs_in_fv(outer, P.OUTER_FFS_GUID)
+if off is None:
+    raise SystemExit("LZMA container FFS not found")
+ffs = outer[off:off + size]
+
+pos = 24
+inner = None
+while pos + 4 <= size:
+    sec_len = P.u24(ffs, pos)
+    if ffs[pos + 3] == P.SEC_GUID_DEFINED:
+        import struct
+        data_off = struct.unpack_from("<H", ffs, pos + 20)[0]
+        inner = P.lzma_decompress(ffs[pos + data_off:pos + sec_len])[0x10:]
+        break
+    pos += (sec_len + 3) & ~3
+if inner is None:
+    raise SystemExit("GUID-defined LZMA section not found")
+
+off, size = P.find_ffs_in_fv(inner, guid)
+if off is None:
+    raise SystemExit("target FFS %s not present" % sys.argv[3])
+
+pos = off + 24
+while pos + 4 <= off + size:
+    sec_len = P.u24(inner, pos)
+    if sec_len < 4:
+        break
+    if inner[pos + 3] == P.SEC_PE32:
+        if hashlib.sha256(inner[pos + 4:pos + sec_len]).digest() == want:
+            print("verified: 9df02dfd carries our SmbiosBmcPushDxe PE32")
+            raise SystemExit(0)
+        raise SystemExit("PE32 in 9df02dfd does not match the built image")
+    pos += (sec_len + 3) & ~3
+raise SystemExit("no PE32 section in the 9df02dfd FFS")
+PYEOF
+
+        bbnote "Stripped AMI OOB stack and injected ${OOB_INJECT_DRIVERS}; ${STRIPPED_ROM} = ${SSZ2} bytes."
+        bbwarn "HOST_BIOS_STRIP_OOB=1: this image has never been booted. Make sure you can reflash over the BIOS SPI mux before powering the host on."
+    fi
+}
+
+do_deploy() {
+    install -d "${DEPLOYDIR}"
+    install -m 0644 "${WORKDIR}/${PATCHED_ROM}" "${DEPLOYDIR}/${PATCHED_ROM}"
+
+    # Ship the individual EFI images too. They are what you need to graft a single
+    # driver into a ROM by hand with tools/romsurgeon.py, without a full rebuild.
+    install -d "${DEPLOYDIR}/openoob-drivers"
+    for m in ${OOB_DRIVERS}; do
+        install -m 0644 "${B}/Build/OpenOobPkg/RELEASE_GCC5/X64/${m}.efi" \
+            "${DEPLOYDIR}/openoob-drivers/${m}.efi"
+    done
+
+    if [ "${HOST_BIOS_STRIP_OOB}" = "1" ]; then
+        install -m 0644 "${WORKDIR}/${STRIPPED_ROM}" "${DEPLOYDIR}/${STRIPPED_ROM}"
+        install -m 0644 "${WORKDIR}/openoob-inventory.txt" \
+            "${DEPLOYDIR}/openoob-drivers/openoob-inventory.txt"
+        ln -sf "${STRIPPED_ROM}" "${DEPLOYDIR}/host-bios-${MACHINE}.rom"
+        bbnote "[OK] Stripped host BIOS: ${DEPLOYDIR}/${STRIPPED_ROM} (32 MiB)"
+    else
+        ln -sf "${PATCHED_ROM}" "${DEPLOYDIR}/host-bios-${MACHINE}.rom"
+    fi
+
+    bbnote "[OK] Patched host BIOS: ${DEPLOYDIR}/${PATCHED_ROM} (32 MiB)"
+    bbnote "     Stable symlink: ${DEPLOYDIR}/host-bios-${MACHINE}.rom"
+    bbnote "     Drivers:        ${DEPLOYDIR}/openoob-drivers/"
+}
+addtask do_deploy after do_compile before do_build

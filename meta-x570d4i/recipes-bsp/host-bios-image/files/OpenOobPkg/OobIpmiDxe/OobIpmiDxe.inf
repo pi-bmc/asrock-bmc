@@ -1,0 +1,46 @@
+## @file
+#  OobIpmiDxe — publishes gOpenOobIpmiTransportProtocol, a serialised IPMI-over-KCS
+#  channel for the other injected OOB drivers.
+#
+#  Displaces AMI's KcsControlDxe (d8b5b270) and DxeIpmiBmcInitialize (6372357a).
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = OobIpmiDxe
+  FILE_GUID                      = 7a41c5e2-30d9-4b17-a8f6-0c2e94b7d513
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = OobIpmiEntry
+
+[Sources]
+  OobIpmiDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  OpenOobPkg/OpenOobPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  UefiLib
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  IpmiKcsLib
+
+[Protocols]
+  gOpenOobIpmiTransportProtocolGuid    ## PRODUCES
+  ## Compatibility shim. Installed so that retained modules whose DEPEX waits on
+  ## AMI's transport still dispatch once DxeIpmiBmcInitialize is stripped.
+  gAmiDxeIpmiTransportProtocolGuid     ## PRODUCES
+
+[Depex]
+  #
+  # TRUE, not a protocol dependency: this driver must come up before anything
+  # that wants to talk to the BMC, and the stock AMI DXE core's apriori list is
+  # not ours to edit. Everything it needs is in the UEFI boot services table.
+  #
+  TRUE

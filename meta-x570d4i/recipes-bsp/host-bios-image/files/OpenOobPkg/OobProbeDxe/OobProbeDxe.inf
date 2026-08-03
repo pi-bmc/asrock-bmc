@@ -1,0 +1,53 @@
+## @file
+#  OobProbeDxe — minimal dispatch-liveness probe.
+#
+#  Deliberately dependency-light: no IpmiKcsLib, no SMBIOS, no protocol
+#  producers. It has to be able to run in the most hostile placement we can
+#  find, and it has to be small enough to fit the tight nested containers, so
+#  it takes nothing it does not need.
+#
+#  The DEPEX is TRUE so the AMI DXE core dispatches it as early as it is willing
+#  to — which is exactly the thing under test.
+#
+#  Copyright (c) 2026, ASRock Rack X570D4I-2T OpenBMC port.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = OobProbeDxe
+  FILE_GUID                      = 7c4d1a92-6f38-4b05-9e2a-3d81c0b7f4e6
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = OobProbeEntry
+
+[Sources]
+  OobProbeDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  OpenOobPkg/OpenOobPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+  UefiLib
+  BaseLib
+  BaseMemoryLib
+  IoLib
+  DebugLib
+
+[Protocols]
+  gEfiVariableWriteArchProtocolGuid   ## CONSUMES  ## NOTIFY
+  gEfiGraphicsOutputProtocolGuid      ## CONSUMES  ## Console census
+  gEfiSimpleTextOutProtocolGuid       ## CONSUMES  ## Console census
+  gEfiUgaDrawProtocolGuid             ## CONSUMES  ## Console census
+  gEfiPciIoProtocolGuid               ## CONSUMES  ## Console census
+
+[Guids]
+  gEfiEndOfDxeEventGroupGuid          ## CONSUMES  ## Event
+  gEfiEventReadyToBootGuid            ## CONSUMES  ## Event
+
+[Depex]
+  TRUE

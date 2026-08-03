@@ -1,6 +1,6 @@
 # kas configuration for the ASRock Rack X570D4I-2T OpenBMC build.
 #
-# This repository contains ONLY the files we own: the `meta-x570d4i2t`
+# This repository contains ONLY the files we own: the `meta-x570d4i`
 # machine layer. Everything else is pulled, unmodified, from upstream
 # OpenBMC by kas.
 #
@@ -48,7 +48,7 @@ repos:
       meta-aspeed:
       # Base ASRock layer: provides conf/machine/include/asrock.inc and globs
       # the shared meta-common recipes (u-boot, flash, settings bbappends) that
-      # meta-x570d4i2t builds on top of. Unmodified upstream.
+      # meta-x570d4i builds on top of. Unmodified upstream.
       meta-asrock:
 
   # ---------------------------------------------------------------------------
@@ -56,9 +56,9 @@ repos:
   # ---------------------------------------------------------------------------
   asrock-x570d4i2t:
     layers:
-      meta-x570d4i2t:
+      meta-x570d4i:
 
-# Mirrors meta-x570d4i2t/conf/templates/default/local.conf.sample (minus
+# Mirrors meta-x570d4i/conf/templates/default/local.conf.sample (minus
 # MACHINE/DISTRO, which kas emits from the keys above).
 local_conf_header:
   x570d4i2t: |
@@ -68,7 +68,7 @@ local_conf_header:
     USER_CLASSES ?= "buildstats"
     PATCHRESOLVE = "noop"
     CONF_VERSION = "2"
-    # Use the official prebuilt node binaries (meta-x570d4i2t/recipes-devtools/
+    # Use the official prebuilt node binaries (meta-x570d4i/recipes-devtools/
     # nodejs/) instead of compiling nodejs-native from source for webui-vue;
     # saves ~30 CPU-minutes on cold builds.
     PREFERRED_PROVIDER_nodejs-native = "nodejs-prebuilt-native"

@@ -1,0 +1,32 @@
+## @file
+#  Minimal IPMI-over-KCS transport library.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = IpmiKcsLib
+  FILE_GUID                      = 5e0c93b7-2a41-4d68-8f35-b1d70e4a62c9
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = IpmiKcsLib
+
+[Sources]
+  IpmiKcsLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  OpenOobPkg/OpenOobPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  IoLib
+  DebugLib
+
+[Pcd]
+  gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsDataPort     ## CONSUMES
+  gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsCmdPort      ## CONSUMES
+  gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsSpinCount    ## CONSUMES
+  gOpenOobPkgTokenSpaceGuid.PcdOobPostCodePort     ## CONSUMES

@@ -1,0 +1,62 @@
+## @file
+#  BiosCfgOobDxe — host side of the OpenBMC "BIOS OOB config" IPMI command set
+#  (NetFn 0x30, cmds 0xD3-0xD8). Publishes the knob schema and the LIVE varstore
+#  values to the BMC, and applies settings staged from Redfish.
+#
+#  Previously compiled into SmbiosBmcPushDxe's PE32 as a passenger: that module
+#  owned the entry point and supplied the KCS transport. Both directions of the
+#  coupling are gone — the transport is IpmiKcsLib and this driver arms its own
+#  EndOfDxe / timer / ReadyToBoot hooks.
+#
+#  Consequence of the split: this is now a SEPARATE FFS file, so it is grafted in
+#  by tools/romsurgeon.py rather than riding along in the AMI SendInfoBmcIpmiDxe
+#  slot that UEFIReplace overwrites. It needs free space in the dispatched
+#  firmware volume, which means a strip profile has to run. See files/README.md.
+#
+#  BiosCfgOobSchema.h is GENERATED at build time by gen-schema-header.py from
+#  x570d4i2t-bios-knobs.xml; it is deliberately not checked in.
+#
+#  Copyright (c) 2024, ASRockRack X570D4I-2T OpenBMC port.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = BiosCfgOobDxe
+  FILE_GUID                      = 9b3c62d1-4e78-4a05-8f21-6c07ae5db934
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = BiosCfgOobEntry
+
+[Sources]
+  BiosCfgOobDxe.c
+  BiosCfgOobVarstores.h
+
+[Packages]
+  MdePkg/MdePkg.dec
+  OpenOobPkg/OpenOobPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+  BaseLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DebugLib
+  IpmiKcsLib
+  OobTelemetryLib
+  UefiLib
+
+[Guids]
+  gEfiEndOfDxeEventGroupGuid          ## CONSUMES  ## Event
+  gEfiEventReadyToBootGuid            ## CONSUMES  ## Event
+
+[Depex]
+  #
+  # VariableArch is a hard requirement, not a convenience: the whole point of
+  # this driver is reading live varstores with gRT->GetVariable and writing
+  # staged changes back, so dispatching before the variable services exist would
+  # publish a snapshot of nothing.
+  #
+  gEfiVariableArchProtocolGuid AND gEfiVariableWriteArchProtocolGuid

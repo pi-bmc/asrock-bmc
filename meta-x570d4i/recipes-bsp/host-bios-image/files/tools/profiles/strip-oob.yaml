@@ -1,0 +1,208 @@
+name: strip-oob
+description: >
+  Remove AMI's proprietary out-of-band management stack from the dispatched DXE
+  volume and replace the parts we need with OpenOobPkg drivers.
+
+# ---------------------------------------------------------------------------
+# Reading this file
+# ---------------------------------------------------------------------------
+# Groups are ordered by confidence, tier 1 first. Each group states why its
+# modules are removable and what is lost. Comment a group out to skip it.
+#
+# The `guid` is authoritative — `name` is the FFS UI-section string and is only
+# used as a fallback lookup and for readable output.
+#
+# IMPORTANT: nothing in tier 3 should be enabled before checking the reverse
+# dependency map in docs/STRIP-PLAN.md. Removing a module that another module's
+# DEPEX waits on does not fail loudly — the dependent silently never dispatches,
+# which on this board means a boot that hangs with no console.
+# ---------------------------------------------------------------------------
+
+strip:
+  # =========================================================================
+  # TIER 1 — Redfish / REST stack.
+  # =========================================================================
+  - group: redfish
+    why: >
+      AMI's BIOS-side Redfish client (host-interface discovery, REST transport,
+      inventory push, TLS cert store, SecureBoot-over-Redfish). OpenBMC provides
+      the Redfish service itself, so a duplicate client inside the BIOS is pure
+      overhead. Nothing outside this group consumes its protocols — it is a leaf.
+      Largest single win in the ROM at 272 KiB across 10 modules.
+    modules:
+      - { name: RfInventory,        guid: ab78d6a5-7e2a-47aa-9f32-780793c0dadb }
+      - { name: RedfishHi,          guid: cef05965-f399-42a0-a226-a3fe96aa944e }
+      - { name: RfTlsCertificates,  guid: 4239aa07-8de8-4c67-a971-c6f3f56d7f93 }
+      - { name: AmiRedfishDynExt,   guid: 3b1de95d-1e5a-4984-9c19-920e21dcec28 }
+      - { name: RfSecureBoot,       guid: 594ac308-8819-4284-b661-b7570881cc0f }
+      - { name: RestBoot,           guid: ebc065d8-befa-4437-bed0-9a41272102f1 }
+      - { name: UefiRestNetwork,    guid: 54b34347-c478-4865-8415-742e5155b204 }
+      - { name: RfTrustedModules,   guid: d080f93d-c0e8-47d6-9201-6b0ef6e28e1a }
+      - { name: AmiRedFishApi,      guid: d4395796-6f4c-4c6b-b9d1-92daa7199a84 }
+      - { name: RfAutoGen,          guid: f56f984f-3846-49d8-aa0a-23de27e38386 }
+      # MANDATORY member of this group, not optional. FirmwareConfigDrv's DEPEX
+      # pushes gEfiRestProtocol (0DB48A36) as its FIRST term, and UefiRestNetwork
+      # is that protocol's only producer. Remove UefiRestNetwork without this and
+      # FirmwareConfigDrv is hard-blocked — it never dispatches, silently. It is
+      # itself part of the Redfish stack (18 REST references, installs nothing,
+      # nothing depends on it), so it belongs here. 102 KiB.
+      - { name: FirmwareConfigDrv,  guid: 1c5c6e7e-552a-443e-9a04-7408adee99d3 }
+
+  # =========================================================================
+  # TIER 1 — PLDM.
+  # =========================================================================
+  - group: pldm
+    why: >
+      PLDM firmware-update and setup-variable mirroring over MCTP. We do not use
+      PLDM at all; OpenBMC drives BIOS config through our own injected DXE and
+      flashes via the SPI mux. 286 KiB across three modules, two of which are
+      large embedded data blobs rather than code.
+    modules:
+      - { name: AmiPldmInterfaceBin,                guid: 6d4849d1-dc04-4d57-bc90-2e0b5cff1828 }
+      - { name: PldmImportBin,                      guid: 760640da-ecac-4229-a591-7d3066eb242d }
+      - { name: BackupRestoreSetupItemByPldmDxe,    guid: 2874d867-99ab-4c1b-b9b5-883e546fffd8 }
+
+  # =========================================================================
+  # TIER 2 — AMI BMC feature drivers.
+  # =========================================================================
+  - group: bmc-features
+    why: >
+      Discrete BMC features we either do not want or reimplement in OpenOobPkg.
+      Each is a leaf consumer of the AMI IPMI transport, so removing them cannot
+      strand a dependent — but they DO consume the transport, which is why the
+      transport itself is tier 3 and must go in the same pass or later.
+    modules:
+      # AC-loss power-restore policy: OpenBMC owns this via its own power policy.
+      - { name: AcPowerLossByBmcDxe, guid: 3f51aa62-949f-431a-8a5d-a7d0ccc89453 }
+      # BIOS-side flash update over IPMI. We flash via the SPI mux instead.
+      - { name: AmiFwUpdateBmc,      guid: 1de64b8e-138b-4258-b7dd-f2d8ec142a9e }
+      - { name: SendMBFw,            guid: 8612ba81-2742-44ed-870b-99198e06fe61 }
+      # BMC MAC backup/restore into BIOS NVRAM — OpenBMC keeps its own config.
+      - { name: BackupBmcMacDxe,     guid: ce39db42-b459-46b2-81a2-3b89b1fc4222 }
+      # BIOS <-> BMC setting sync. Superseded by our BiosCfgOobDxe.
+      - { name: BmcSync,             guid: de9d58c3-4242-4fee-a90e-c40b057cbb94 }
+      # IPMI-over-USB transport. The board uses KCS over LPC; this is dead weight.
+      # Its protocol (42D353B0) is consumed only by ServerMgmtSetup and RedfishHi.
+      - { name: DxeIpmiUsb,          guid: 1015ea63-7421-417d-bb51-e5193061c551 }
+      # KCS timing/config tweaks read from the ServerSetup NVAR. Installs NOTHING
+      # — it is a *client* of the IPMI transport, not its provider (the transport
+      # and the 0xCA2/0xCA3 I/O both live inside DxeIpmiBmcInitialize). Zero
+      # dependents of any kind, so this is unconditionally safe.
+      - { name: KcsControlDxe,       guid: d8b5b270-868c-40a4-8672-d3d242fc6450 }
+      # FRU redirection. Replaced by OobFruDxe (not yet written).
+      - { name: IpmiRedirFru,        guid: 8f2c127e-117d-484b-8a44-fbd911be125e }
+      # DO NOT STRIP SendInfoBmcIpmiDxe (9df02dfd) IN THIS LAYER.
+      #
+      # The host-bios-image recipe's injection step REPLACES that FFS slot's PE32
+      # and DEPEX with our SmbiosBmcPushDxe via UEFIReplace — the slot is reused,
+      # not vacated. By the time romsurgeon runs, GUID 9df02dfd IS our driver, so
+      # stripping it here would delete the very code we just injected.
+      #
+      # If you ever switch SmbiosBmcPushDxe to being added as its own new FFS
+      # (rather than displacing the AMI slot), re-enable this line.
+      #
+      # - { name: SendInfoBmcIpmiDxe, guid: 9df02dfd-8cf7-4fc7-b8ae-cbd9560a3f24 }
+
+  # =========================================================================
+  # TIER 2 — the SMM BMC island.
+  # =========================================================================
+  - group: smm-bmc
+    why: >
+      Self-contained SMM island and the cleanest large excision in the tree.
+      SmmIpmiBmcInitialize is the sole producer of the SMM IPMI transport
+      (1DBD1503), and the ONLY modules that DEPEX on it are the other four here.
+      Zero non-manageability dependents. Note SmmIpmiBmcInitialize's own SMM
+      DEPEX pushes the DXE transport 4A1D0E66, so it would go on dispatching off
+      OobIpmiDxe's presence marker if left in place — remove it explicitly.
+    modules:
+      - { name: SmmIpmiBmcInitialize, guid: e8c729fe-fb0a-4344-ad7e-48784116c9ef }
+      - { name: AcPowerLossByBmcSmm,  guid: ec1d3f10-9414-42f1-b1de-88355ff92940 }
+      - { name: BmcAcpi,              guid: 15ccacbe-2a4a-45ed-9ec2-53135f98ab24 }
+      - { name: BmcSmi,               guid: 9be4bc45-cea8-4440-8754-10f9beb2c4f1 }
+      - { name: SmmBmcElog,           guid: 543323ce-9f0c-4ddf-a33c-bc3b3a5ac227 }
+
+  # =========================================================================
+  # TIER 3 — needs a decision or a replacement first. NOT ENABLED.
+  # =========================================================================
+  #
+  # A stranded DEPEX is silent: the dependent never dispatches. On a board whose
+  # only console is the KVM we are trying to fix, that is a blind hang.
+  #
+  # - group: ipmi-transport
+  #   why: >
+  #     DxeIpmiBmcInitialize is the sole producer of the AMI DXE IPMI transport
+  #     4A1D0E66, and 15 modules DEPEX on it. OobIpmiDxe installs that GUID as a
+  #     presence marker, which unblocks all of them — but the marker's interface
+  #     pointer is NULL.
+  #
+  #     That is sufficient for DefaultOverride (a647e4e4), which never
+  #     dereferences the protocol and uses the DEPEX only for ordering. It is NOT
+  #     sufficient for PcieInfoJudgeDxe (b603a688) or SerialMuxControl
+  #     (129f6aa7), which really do call through AMI's transport vtable — a
+  #     layout we have not reproduced. So enabling this group REQUIRES either
+  #     removing those two as well (listed below) or implementing the vtable.
+  #   modules:
+  #     - { name: DxeIpmiBmcInitialize, guid: 6372357a-06d7-43ef-b55c-1964f3dd6916 }
+  #     - { name: PcieInfoJudgeDxe,     guid: b603a688-f023-4228-a31f-bf048888e404 }
+  #     - { name: SerialMuxControl,     guid: 129f6aa7-ab69-4cb8-aed1-40985001115e }
+  #
+  # - group: watchdog-and-sel
+  #   why: >
+  #     FRB watchdog and SEL logging. Both are dispatch-safe leaves (DxeFrb's
+  #     BC5F861C and BmcElog's 16D11030 have no surviving consumers once the SMM
+  #     island is gone), but removing DxeFrb means nothing pets the BMC watchdog.
+  #     PeiFrb (0EF53039) runs in the PEI phase, which we cannot strip, so FRB2
+  #     may already be ARMED before DXE starts — in which case the BMC resets the
+  #     host mid-POST. Land a replacement in the same flash pass, or disable FRB
+  #     on the BMC first.
+  #   modules:
+  #     - { name: DxeFrb,                guid: 9d0cea63-745b-417d-bba4-e5193061c907 }
+  #     - { name: WatchDogByIpmiDxeInit, guid: ea42225b-5db1-4d11-b149-f654892dda6d }
+  #     - { name: BmcElog,               guid: 43788beb-638f-434c-8a84-46d33a589e76 }
+  #     - { name: DxeSelStatusCode,      guid: ae587172-cc15-48e1-8be0-29ddf05c6a1f }
+  #
+  # - group: board-inventory
+  #   why: >
+  #     Dispatch-safe (no DEPEX dependents) but with real functional coupling:
+  #       * SystemInventoryInfo's three protocols are LocateProtocol'd by Bds,
+  #         HddSecurity, HardwareSignatureEntry and HardwareHealthManagementDxe.
+  #         Removal cannot block dispatch, but those four must tolerate
+  #         EFI_NOT_FOUND. Unverified.
+  #       * ServerMgmtSetup (134 KiB) owns the "Server Mgmt" HII page and is the
+  #         editor for the ServerSetup NVAR (01239999-...) that PcieInfoJudgeDxe,
+  #         SerialMuxControl, KcsControlDxe and DxeIpmiBmcInitialize read.
+  #         Removing it orphans that variable rather than breaking dispatch.
+  #       * PldmImportBin's 46F2AB61 is consumed by AmiAfuProtocol (the AMI
+  #         flash-update API) — code-level only.
+  #     FanPolicyDxe is listed for completeness but has NO BMC/IPMI coupling at
+  #     all (AMD Ccx/PSP + PCD only); it is orthogonal to this project.
+  #   modules:
+  #     - { name: ServerMgmtSetup,             guid: 1b08a1db-f91a-4fa1-a911-255c417f1cf7 }
+  #     - { name: SystemInventoryInfo,         guid: 524b4384-d632-4862-9d3a-6d82c9e85825 }
+  #     - { name: SystemInventoryInfoSmm,      guid: e9f8b700-7e13-4736-88da-82624acdecdd }
+  #     - { name: HardwareHealthManagementDxe, guid: e8a9f123-07df-46e2-9bf6-c593caf06a62 }
+  #     - { name: Mac2Uuid,                    guid: efa734d9-0ad6-4a15-a802-4260e9178b3d }
+  #     - { name: ChassisIdDxe,                guid: b3e9b082-ed94-4fe0-a48e-d9b7cc9f7070 }
+  #     - { name: FruToSmbios123ByPcd,         guid: e797428d-2d34-42e9-83ba-ab6f8cba3caa }
+  #     - { name: FruToSystemNameByPcd,        guid: 898fd4de-6660-43c7-9bdf-7b2d41b8f648 }
+  #     - { name: FruToModelNameByPcd,         guid: 778a745f-e14f-48b3-a6e4-4176d6e9cd89 }
+  #     - { name: BMCNetworkConfig2Dxe,        guid: bbd22be4-4aae-45b3-8392-03eb84c1539c }
+  #     - { name: PostStatusDxe,               guid: d1438410-2580-481c-a148-1eee0eecc38f }
+  #
+  # (IpmiRedirFru and PldmImportBin are already stripped by the bmc-features and
+  #  pldm groups above — both are dispatch-safe leaves. Not repeated here.)
+
+# ---------------------------------------------------------------------------
+# Drivers to graft in. Paths are relative to --efi-dir.
+# GUIDs must match each driver's INF FILE_GUID.
+# ---------------------------------------------------------------------------
+inject:
+  - name: BiosCfgOobDxe
+    efi:  BiosCfgOobDxe.efi
+    guid: 9b3c62d1-4e78-4a05-8f21-6c07ae5db934
+  - name: OobIpmiDxe
+    efi:  OobIpmiDxe.efi
+    guid: 7a41c5e2-30d9-4b17-a8f6-0c2e94b7d513
+  - name: VideoRouteDxe
+    efi:  VideoRouteDxe.efi
+    guid: c17b6e94-4a25-4d83-9f0b-6e83d2a10c57

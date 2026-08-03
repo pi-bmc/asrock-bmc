@@ -3,7 +3,7 @@
 A minimal, self-contained OpenBMC build for the **ASRock Rack X570D4I-2T**
 (Aspeed AST2500 BMC).
 
-This repository contains **only the files we own** — the `meta-x570d4i2t`
+This repository contains **only the files we own** — the `meta-x570d4i`
 machine layer. Every upstream layer (openembedded-core, bitbake,
 meta-openembedded, meta-phosphor, meta-aspeed, and the base meta-asrock layer)
 is fetched, unmodified, from upstream OpenBMC by [kas](https://kas.readthedocs.io).
@@ -11,7 +11,7 @@ is fetched, unmodified, from upstream OpenBMC by [kas](https://kas.readthedocs.i
 ```
 asrock-bmc/
 ├── kas.yml             # the whole build definition: pins + layer list + local.conf
-└── meta-x570d4i2t/     # the only layer we maintain
+└── meta-x570d4i/     # the only layer we maintain
 ```
 
 ## How it works
@@ -29,7 +29,7 @@ subtree. So a *single* upstream clone supplies every layer this board needs:
 | `meta-phosphor`                    | openbmc/openbmc                 |
 | `meta-aspeed`                      | openbmc/openbmc                 |
 | `meta-asrock` (base + meta-common) | openbmc/openbmc                 |
-| **`meta-x570d4i2t`**               | **this repo**                   |
+| **`meta-x570d4i`**               | **this repo**                   |
 
 `openbmc/openbmc` is pinned to a fixed commit in [kas.yml](kas.yml) so the build
 is reproducible and byte-for-byte equivalent to building `MACHINE=x570d4i2t`

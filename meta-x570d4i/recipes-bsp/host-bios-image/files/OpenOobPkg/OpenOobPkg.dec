@@ -1,0 +1,111 @@
+## @file
+#  OpenOobPkg — an open replacement for the AMI Aptio out-of-band management
+#  stack on the ASRock Rack X570D4I-2T (AMD X570 + ASPEED AST2500 BMC).
+#
+#  The stock BIOS ships ~31 proprietary AMI modules that implement IPMI/BMC
+#  transport, SEL logging, FRB watchdog, FRU, PLDM and Redfish.  This package
+#  reimplements the parts we actually need against an OpenBMC host interface,
+#  so those modules can be stripped from the flash image entirely.
+#
+#  Modules here are built as ordinary EDK2 DXE drivers and injected into the
+#  stock ROM's dispatched DXE volume by tools/romsurgeon.py — the AMD PEI /
+#  AGESA silicon-init path is left untouched, because no open replacement for
+#  AM4 (Vermeer) silicon init exists.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  DEC_SPECIFICATION              = 0x00010005
+  PACKAGE_NAME                   = OpenOobPkg
+  PACKAGE_GUID                   = 6f1a4c30-9d52-4b8e-9c11-0a7e3f5d2b40
+  PACKAGE_VERSION                = 0.10
+
+[Includes]
+  Include
+
+[LibraryClasses]
+  ##  @libraryclass  Minimal IPMI transport over the host KCS interface.
+  #                  Deliberately not the AMI gEfiIpmiTransportProtocol — this
+  #                  is a plain library so drivers carry no dispatch dependency
+  #                  on a separate transport driver.
+  IpmiKcsLib|Include/Library/IpmiKcsLib.h
+
+[Protocols]
+  ## Produced by OobIpmiDxe so other injected drivers can share one serialised
+  ## KCS channel instead of each racing the firmware's own IPMI traffic.
+  gOpenOobIpmiTransportProtocolGuid = { 0x2c9e7a41, 0x6b3d, 0x4f52, { 0x8e, 0x17, 0xd4, 0x0b, 0x93, 0x62, 0xa5, 0x18 }}
+
+  ## Produced by VideoRouteDxe. Reports which video path this boot selected,
+  ## so BDS-adjacent code (and our BMC push) can observe the decision.
+  gOpenOobVideoRouteProtocolGuid    = { 0x8b5f0d2a, 0x1c74, 0x4a96, { 0xb3, 0x8e, 0x25, 0xf1, 0x60, 0xcd, 0x47, 0x39 }}
+
+  ## AMI's DXE IPMI transport protocol, published in the stock ROM by
+  ## DxeIpmiBmcInitialize (6372357a) and by nothing else.
+  ##
+  ## Fifteen modules DEPEX on this GUID, and three of them are NOT part of the
+  ## OOB stack we are removing: DefaultOverride (a647e4e4), PcieInfoJudgeDxe
+  ## (b603a688) and SerialMuxControl (129f6aa7). DefaultOverride never even
+  ## references the protocol in code — it uses the DEPEX purely to order itself
+  ## after the BMC comes up.
+  ##
+  ## So OobIpmiDxe installs this GUID as a compatibility shim. That single
+  ## install collapses the entire removal blast radius: DxeIpmiBmcInitialize can
+  ## be deleted and every retained dependent still dispatches.
+  gAmiDxeIpmiTransportProtocolGuid  = { 0x4a1d0e66, 0x5271, 0x4e22, { 0x83, 0xfe, 0x90, 0x92, 0x1b, 0x74, 0x82, 0x13 }}
+
+  ## The ASPEED GOP dispatch gate.
+  ##
+  ## Aspeed2500UefiDriver (d88a9618) — the ONLY ASPEED UEFI GOP driver in the
+  ## image — has exactly this one GUID as its entire DXE DEPEX. AMI's
+  ## SlotOpRomDXE (31508ac1) is the only producer of it anywhere in the ROM, and
+  ## it installs it only when `Setup[433] == 0` (CSM disabled) or
+  ## `Setup[442] == 1` (Launch Video OpROM Policy == UEFI only).
+  ##
+  ## The shipped ROM has Setup[433]=2 (CSM Custom) and Setup[442]=2 (Legacy
+  ## only), so neither condition holds and the ASPEED GOP driver is never
+  ## dispatched — the only video path that exists is the legacy VBIOS wrapped in
+  ## GOP by CsmVideo's INT10h shim.
+  ##
+  ## Installing this GUID ourselves makes the DXE core re-evaluate pending
+  ## DEPEXes and dispatch the real GOP driver. No NVRAM write, no reset, and a
+  ## duplicate install on a second handle is harmless if SlotOpRomDXE also runs.
+  gAspeedGopDispatchGateGuid        = { 0x794e15d9, 0xbf1b, 0x4568, { 0x99, 0xac, 0xdc, 0xe2, 0x07, 0xc0, 0x22, 0xe4 }}
+
+[Guids]
+  gOpenOobPkgTokenSpaceGuid         = { 0x6f1a4c30, 0x9d52, 0x4b8e, { 0x9c, 0x11, 0x0a, 0x7e, 0x3f, 0x5d, 0x2b, 0x40 }}
+
+[PcdsFixedAtBuild]
+  ## Host-side KCS data/command I/O ports for the AST2500 LPC interface.
+  ## 0xCA2/0xCA3 is the ASRock Rack X570D4I-2T wiring, confirmed against the
+  ## live board; the IPMI spec default (SMS) would be 0xCA2 as well.
+  gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsDataPort|0x0CA2|UINT16|0x00000001
+  gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsCmdPort|0x0CA3|UINT16|0x00000002
+
+  ## Bound on each KCS status poll. The BMC can be slow to turn a transaction
+  ## around during its own boot, so this is generous by design.
+  gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsSpinCount|1000000|UINT32|0x00000003
+
+  ## POST-code port used for progress breadcrumbs (readable over the BMC's
+  ## port-80 snoop, which is how we debug a black-KVM boot).
+  gOpenOobPkgTokenSpaceGuid.PcdOobPostCodePort|0x0080|UINT16|0x00000004
+
+[PcdsFeatureFlag]
+  ## Which display becomes the primary console when BOTH a known-good discrete
+  ## GPU and the onboard ASPEED are present.
+  ##
+  ## FALSE (default) = onboard ASPEED is primary. That is the deliberate choice
+  ## for this board: the onboard path is the only one the BMC KVM can capture,
+  ## and it is the only one whose driver we know ships in this firmware image.
+  ##
+  ## Setting this TRUE makes a known-good discrete GPU primary instead. Note the
+  ## ASPEED GOP gate is opened either way whenever an ASPEED device is present,
+  ## so this changes which console is primary, not whether the KVM works —
+  ## ConSplitter can drive both.
+  gOpenOobPkgTokenSpaceGuid.PcdVideoRoutePreferDiscreteGpu|FALSE|BOOLEAN|0x00000010
+
+  ## When TRUE, open the ASPEED GOP dispatch gate even if no ASPEED device was
+  ## found on the bus. Only useful if the AST2500 is hidden from config space at
+  ## this phase; installing the marker is harmless either way, but doing it
+  ## unconditionally would hide a genuinely absent BMC VGA.
+  gOpenOobPkgTokenSpaceGuid.PcdVideoRouteForceAspeedGate|FALSE|BOOLEAN|0x00000011

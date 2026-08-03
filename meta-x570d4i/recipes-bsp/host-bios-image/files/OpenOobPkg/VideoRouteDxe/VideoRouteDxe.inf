@@ -1,0 +1,61 @@
+## @file
+#  VideoRouteDxe — decide, per boot, which display controller owns the console
+#  and whether it should be driven by a UEFI GOP driver or a legacy VBIOS.
+#
+#  There is no AMI module this replaces one-for-one; it is new behaviour that
+#  the stock BIOS only offers as static Setup questions (CSM005 / CSM009 /
+#  PTT004). See docs/VIDEO-ROUTING.md for the mechanism and its limits.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = VideoRouteDxe
+  FILE_GUID                      = c17b6e94-4a25-4d83-9f0b-6e83d2a10c57
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = VideoRouteEntry
+
+[Sources]
+  VideoRouteDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  OpenOobPkg/OpenOobPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+  UefiLib
+  BaseLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DebugLib
+  IoLib
+  PciCf8Lib
+
+[Protocols]
+  gOpenOobVideoRouteProtocolGuid    ## PRODUCES
+  ## Installed to open the ASPEED GOP dispatch gate — this is the enforcement
+  ## mechanism, not an incidental publication.
+  gAspeedGopDispatchGateGuid        ## PRODUCES
+  ## Watched, not produced — a protocol notify counts GOP arrivals so we can tell
+  ## "we installed a marker" apart from "a GOP driver actually started".
+  gEfiGraphicsOutputProtocolGuid    ## CONSUMES
+
+[Pcd]
+  gOpenOobPkgTokenSpaceGuid.PcdOobPostCodePort             ## CONSUMES
+
+[FeaturePcd]
+  gOpenOobPkgTokenSpaceGuid.PcdVideoRoutePreferDiscreteGpu ## CONSUMES
+  gOpenOobPkgTokenSpaceGuid.PcdVideoRouteForceAspeedGate   ## CONSUMES
+
+[Depex]
+  #
+  # TRUE so we run before PciBus publishes EFI_PCI_IO_PROTOCOL and starts
+  # dispatching option ROMs. The scan below uses raw CF8/CFC config cycles and
+  # therefore needs no PCI protocol stack.
+  #
+  TRUE
