@@ -91,12 +91,12 @@ UEFIREPLACE ?= "${UNPACKDIR}/UEFIReplace"
 TRUE_DEPEX ?= "${WORKDIR}/true.depex"
 
 # Every driver OpenOobPkg.dsc produces.
-OOB_DRIVERS ?= "SmbiosBmcPushDxe BiosCfgOobDxe OobIpmiDxe VideoRouteDxe"
+OOB_DRIVERS ?= "SmbiosBmcPushDxe BiosCfgOobDxe OobIpmiDxe VideoRouteDxe OobSetupDefaultsDxe"
 
 # Drivers grafted in as NEW FFS files, i.e. everything except SmbiosBmcPushDxe,
 # which reaches the flash by displacing the AMI SendInfoBmcIpmiDxe slot instead.
 # Only used when HOST_BIOS_STRIP_OOB is enabled.
-OOB_INJECT_DRIVERS ?= "BiosCfgOobDxe OobIpmiDxe VideoRouteDxe"
+OOB_INJECT_DRIVERS ?= "BiosCfgOobDxe OobIpmiDxe VideoRouteDxe OobSetupDefaultsDxe"
 
 # Run tools/romsurgeon.py to free space in the dispatched firmware volume and
 # graft in OOB_INJECT_DRIVERS.

@@ -96,6 +96,10 @@
   OpenOobPkg/BiosCfgOobDxe/BiosCfgOobDxe.inf # split out of SmbiosBmcPushDxe
   OpenOobPkg/OobIpmiDxe/OobIpmiDxe.inf       # displaces KcsControlDxe / DxeIpmiBmcInitialize
   OpenOobPkg/VideoRouteDxe/VideoRouteDxe.inf # new: per-boot video path selection
+  # Reasserts Above 4G Decoding = Enabled and SR-IOV = Disabled in PCI_COMMON.
+  # Dispatches on the variable arch protocols rather than at EndOfDxe, because
+  # the knob it fixes governs PCI resource assignment.
+  OpenOobPkg/OobSetupDefaultsDxe/OobSetupDefaultsDxe.inf
 
   #
   # Instrumentation, not product. OobProbeDxe exists to establish whether the AMI

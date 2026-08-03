@@ -33,8 +33,11 @@
 
 [Protocols]
   gOpenOobIpmiTransportProtocolGuid    ## PRODUCES
-  ## Compatibility shim. Installed so that retained modules whose DEPEX waits on
-  ## AMI's transport still dispatch once DxeIpmiBmcInitialize is stripped.
+  ## Binary-compatible reimplementation of AMI's DXE IPMI transport, so
+  ## DxeIpmiBmcInitialize can be stripped while the consumers we retain keep
+  ## working. No longer a bare presence marker: the vtable is real, and its
+  ## layout is recovered from the shipping binary — see the provenance note in
+  ## Include/Protocol/AmiIpmiTransport.h.
   gAmiDxeIpmiTransportProtocolGuid     ## PRODUCES
 
 [Depex]

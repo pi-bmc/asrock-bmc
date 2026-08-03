@@ -67,3 +67,12 @@ inject:
   - name: VideoRouteDxe
     efi:  VideoRouteDxe.efi
     guid: c17b6e94-4a25-4d83-9f0b-6e83d2a10c57
+  # Reasserts Above 4G Decoding = Enabled and SR-IOV Support = Disabled in
+  # PCI_COMMON. Above 4G is what cleared the terminal POST 0x99 hang with the
+  # Tesla K80 installed, so this is a boot requirement, not a preference. It is
+  # in this profile too, not just strip-oob: the enforcement is orthogonal to
+  # removing AMI's OOB stack, and this is the profile closest to what has
+  # actually run on hardware.
+  - name: OobSetupDefaultsDxe
+    efi:  OobSetupDefaultsDxe.efi
+    guid: 53c918ae-6f3b-4db5-aa69-c028199a6df7

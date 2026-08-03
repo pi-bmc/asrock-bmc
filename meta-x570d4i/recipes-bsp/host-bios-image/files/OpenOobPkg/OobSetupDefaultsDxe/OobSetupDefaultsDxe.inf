@@ -1,0 +1,46 @@
+## @file
+#  OobSetupDefaultsDxe — reassert Setup values the platform must boot with.
+#
+#  Enforces Above 4G Decoding = Enabled and SR-IOV Support = Disabled in the
+#  PCI_COMMON varstore on every boot. See the header comment in the .c for the
+#  full rationale, including why a reset is required and why it cannot loop.
+#
+#  Copyright (c) 2026, ASRock Rack X570D4I-2T OpenBMC port.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION     = 0x00010006
+  BASE_NAME       = OobSetupDefaultsDxe
+  FILE_GUID       = 53c918ae-6f3b-4db5-aa69-c028199a6df7
+  MODULE_TYPE     = DXE_DRIVER
+  VERSION_STRING  = 1.0
+  ENTRY_POINT     = OobSetupDefaultsEntry
+
+[Sources]
+  OobSetupDefaultsDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  OpenOobPkg/OpenOobPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+  UefiLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DebugLib
+  # Only for OobPostCode(): with no console on this board, port 0x80 is the one
+  # progress channel the BMC can actually observe.
+  IpmiKcsLib
+
+[Depex]
+  #
+  # Dispatch at the earliest moment variables are both readable and writable.
+  # That is deliberately much earlier than BiosCfgOobDxe, which does its work at
+  # EndOfDxe — long after PCI resource assignment, and therefore useless for
+  # correcting a knob that governs it.
+  #
+  gEfiVariableArchProtocolGuid AND gEfiVariableWriteArchProtocolGuid

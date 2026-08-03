@@ -52,6 +52,9 @@ static constexpr ipmi::NetFn netFnAmiOem32 = 0x32;  // AMI OEM
 
 // --- NetFn 0x3A, transcribed from libasrrcmds.so -------------------------
 static constexpr ipmi::Cmd cmdSetBiosFwInfo = 0xB2;
+
+// --- NetFn 0x32, decompiled from BmcSync (DE9D58C3) ----------------------
+static constexpr ipmi::Cmd cmdBmcSyncStatus = 0x3D;
 static constexpr ipmi::Cmd cmdSetBiosPostStatus = 0xBD;
 static constexpr ipmi::Cmd cmdGetBiosPostStatus = 0xBE;
 
@@ -208,6 +211,51 @@ static ipmi::RspType<> oemAcceptAndLog(ipmi::Context::ptr ctx,
 }
 
 // ---------------------------------------------------------------------------
+// 0x32 / 0x3D  BmcSync status   request: [01 00 07]   response: CC + 3 bytes
+// ---------------------------------------------------------------------------
+// This one is NOT a guess either. It is decompiled from BmcSync
+// (DE9D58C3-4242-4FEE-A90E-C40B057CBB94) in the live bank, which polls it in a
+// blocking loop during POST:
+//
+//   0x3f5  mov  bl, 0x78                 ; 120 retries
+//   0x3fc  mov  word [rsp+0x58], 1       ; request bytes = [01 00 07]
+//   0x410  mov  byte [rsp+0x5a], 7
+//   0x422  mov  byte [rsp+0x28], 3       ; CommandDataSize = 3
+//   0x431  mov  byte [rsp+0x50], 3       ; ResponseDataSize = 3  <-- wants DATA
+//   0x436  call qword ptr [rdi+0x10]     ; This->SendIpmiCommand
+//   0x44b  mov  dl, [rsp+0x60]           ; resp[0]
+//   0x456  mov  cl, [rsp+0x61]           ; resp[1]
+//   0x44f  mov  al, [rsp+0x62]           ; resp[2]
+//   0x45a  and  r8b, 1 / test cl,1 / test al,1
+//   0x467  je   0x4c3                    ; ALL bit-0 clear -> done, exit loop
+//   0x492  mov  ecx, 0x1e8480            ; else Stall 2,000,000 us = 2 s
+//   0x49f  add  bl, 0xff                 ; retry--
+//
+// So the loop terminates only when bit 0 is clear in every one of the three
+// response bytes. Returning a bare completion code with NO data bytes leaves
+// BmcSync's stack buffer holding whatever was there before, which is why the
+// accept-and-log stub made it spin: observed on hardware polling every 2 s for
+// 61 iterations at POST 0x91 until the host powered off.
+//
+// Answering with three zero bytes takes the 0x4c3 exit on the first call.
+// "Nothing pending to sync" is also the honest answer: BmcSync exists to hand
+// BIOS state to AMI's BMC-side OOB stack, which this port replaces outright.
+static ipmi::RspType<uint8_t, uint8_t, uint8_t> getBmcSyncStatus(
+    ipmi::Context::ptr ctx, std::vector<uint8_t> req)
+{
+    if (!onSystemInterface(ctx))
+    {
+        return ipmi::response(ipmi::ccInsufficientPrivilege);
+    }
+
+    log<level::INFO>("AMI-OEM BmcSync status polled",
+                     phosphor::logging::entry("REQ=%s", hex(req).c_str()));
+
+    // All three bytes must have bit 0 clear or BmcSync keeps polling.
+    return ipmi::responseSuccess(0, 0, 0);
+}
+
+// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 static void registerAmiOemCommands() __attribute__((constructor));
@@ -235,7 +283,13 @@ static void registerAmiOemCommands()
                               static_cast<ipmi::Cmd>(c),
                               ipmi::Privilege::Admin, oemAcceptAndLog);
     }
-    for (ipmi::Cmd c : {0x72, 0x5D, 0x3D})
+    // 0x3D is NOT in this list: BmcSync blocks POST polling it every 2 s and
+    // needs three real data bytes back, not a bare completion code. See
+    // getBmcSyncStatus above.
+    ipmi::registerHandler(ipmi::prioOemBase, netFnAmiOem32, cmdBmcSyncStatus,
+                          ipmi::Privilege::Admin, getBmcSyncStatus);
+
+    for (ipmi::Cmd c : {0x72, 0x5D})
     {
         ipmi::registerHandler(ipmi::prioOemBase, netFnAmiOem32,
                               static_cast<ipmi::Cmd>(c),

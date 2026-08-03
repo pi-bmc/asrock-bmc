@@ -32,6 +32,21 @@
   IpmiKcsLib|Include/Library/IpmiKcsLib.h
 
 [Protocols]
+  ## EFI 1.1 UGA Draw, 982C298B-F4FA-41CB-B838-77AA688FB839.
+  ##
+  ## Declared HERE rather than consumed from MdePkg because current EDK2 has
+  ## removed UGA Draw outright — there is no Protocol/UgaDraw.h and no entry in
+  ## MdePkg.dec, so an INF referencing it fails with "error 4000: Value of
+  ## Protocol [gEfiUgaDrawProtocolGuid] is not found".
+  ##
+  ## The stock Aptio V image still carries CSM and can still publish UGA, so
+  ## OobProbeDxe's console census counts its handles to tell "a legacy console
+  ## exists" apart from "no console at all". Only the GUID is ever used
+  ## (CountHandles takes a pointer to it); nothing dereferences the protocol
+  ## structure, which is why re-declaring the GUID is sufficient and no local
+  ## copy of the removed header is needed.
+  gEfiUgaDrawProtocolGuid           = { 0x982c298b, 0xf4fa, 0x41cb, { 0xb8, 0x38, 0x77, 0xaa, 0x68, 0x8f, 0xb8, 0x39 }}
+
   ## Produced by OobIpmiDxe so other injected drivers can share one serialised
   ## KCS channel instead of each racing the firmware's own IPMI traffic.
   gOpenOobIpmiTransportProtocolGuid = { 0x2c9e7a41, 0x6b3d, 0x4f52, { 0x8e, 0x17, 0xd4, 0x0b, 0x93, 0x62, 0xa5, 0x18 }}

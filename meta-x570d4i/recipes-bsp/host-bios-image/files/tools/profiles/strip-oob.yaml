@@ -122,41 +122,55 @@ strip:
       - { name: SmmBmcElog,           guid: 543323ce-9f0c-4ddf-a33c-bc3b3a5ac227 }
 
   # =========================================================================
+  # TIER 2 — AMI's DXE IPMI transport. Enabled 2026-08-03.
+  # =========================================================================
+  - group: ipmi-transport
+    why: >
+      DxeIpmiBmcInitialize is the sole producer of the AMI DXE IPMI transport
+      4A1D0E66 and 15 modules DEPEX on it, so removing it used to strand every
+      one of them.
+
+      OobIpmiDxe now PUBLISHES THAT PROTOCOL FOR REAL rather than as a NULL
+      presence marker. The struct layout was recovered from this exact ROM —
+      the publisher installs `context + 0x120` from a 0x178-byte
+      AllocateZeroPool block, and SerialMuxControl is observed calling
+      `[This + 0x10]` with (NetFn=6, Lun=0, Cmd=0x42) — so SendIpmiCommand,
+      GetBmcStatus and SendIpmiCommandEx now sit at the offsets the shipping
+      consumers actually dereference. Full derivation, with addresses, is in
+      OpenOobPkg/Include/Protocol/AmiIpmiTransport.h.
+
+      Consequently PcieInfoJudgeDxe (b603a688) and SerialMuxControl (129f6aa7)
+      are NO LONGER part of this group. They were only ever listed here because
+      the marker's NULL interface would have faulted them; with a working vtable
+      they keep their behaviour and stay in the image. DefaultOverride (a647e4e4)
+      never dereferenced the protocol at all and was always safe.
+    modules:
+      - { name: DxeIpmiBmcInitialize, guid: 6372357a-06d7-43ef-b55c-1964f3dd6916 }
+
+  # =========================================================================
   # TIER 3 — needs a decision or a replacement first. NOT ENABLED.
   # =========================================================================
   #
   # A stranded DEPEX is silent: the dependent never dispatches. On a board whose
   # only console is the KVM we are trying to fix, that is a blind hang.
   #
-  # - group: ipmi-transport
-  #   why: >
-  #     DxeIpmiBmcInitialize is the sole producer of the AMI DXE IPMI transport
-  #     4A1D0E66, and 15 modules DEPEX on it. OobIpmiDxe installs that GUID as a
-  #     presence marker, which unblocks all of them — but the marker's interface
-  #     pointer is NULL.
-  #
-  #     That is sufficient for DefaultOverride (a647e4e4), which never
-  #     dereferences the protocol and uses the DEPEX only for ordering. It is NOT
-  #     sufficient for PcieInfoJudgeDxe (b603a688) or SerialMuxControl
-  #     (129f6aa7), which really do call through AMI's transport vtable — a
-  #     layout we have not reproduced. So enabling this group REQUIRES either
-  #     removing those two as well (listed below) or implementing the vtable.
-  #   modules:
-  #     - { name: DxeIpmiBmcInitialize, guid: 6372357a-06d7-43ef-b55c-1964f3dd6916 }
-  #     - { name: PcieInfoJudgeDxe,     guid: b603a688-f023-4228-a31f-bf048888e404 }
-  #     - { name: SerialMuxControl,     guid: 129f6aa7-ab69-4cb8-aed1-40985001115e }
-  #
   # - group: watchdog-and-sel
   #   why: >
-  #     FRB watchdog and SEL logging. Both are dispatch-safe leaves (DxeFrb's
-  #     BC5F861C and BmcElog's 16D11030 have no surviving consumers once the SMM
-  #     island is gone), but removing DxeFrb means nothing pets the BMC watchdog.
-  #     PeiFrb (0EF53039) runs in the PEI phase, which we cannot strip, so FRB2
-  #     may already be ARMED before DXE starts — in which case the BMC resets the
-  #     host mid-POST. Land a replacement in the same flash pass, or disable FRB
-  #     on the BMC first.
+  #     SEL logging, and the FRB watchdog that must NOT be touched.
+  #
+  #     *** DxeFrb (9d0cea63) IS DELIBERATELY RETAINED — do not add it here. ***
+  #     Decision recorded 2026-08-03. PeiFrb (0EF53039) runs in the PEI phase,
+  #     which lives in the PSP-verified zlib FV and is therefore unstrippable, so
+  #     FRB2 may already be ARMED before DXE even starts. DxeFrb is what pets it.
+  #     Strip DxeFrb and nothing does — the BMC then resets the host mid-POST,
+  #     and because this board's only console is the KVM we are still fixing, it
+  #     presents as an unexplained reboot loop with no diagnostic.
+  #
+  #     The remaining three are dispatch-safe leaves (BmcElog's 16D11030 has no
+  #     surviving consumers once the SMM island is gone) and could be enabled
+  #     independently, but they are left off pending a boot that has actually
+  #     run the tiers above.
   #   modules:
-  #     - { name: DxeFrb,                guid: 9d0cea63-745b-417d-bba4-e5193061c907 }
   #     - { name: WatchDogByIpmiDxeInit, guid: ea42225b-5db1-4d11-b149-f654892dda6d }
   #     - { name: BmcElog,               guid: 43788beb-638f-434c-8a84-46d33a589e76 }
   #     - { name: DxeSelStatusCode,      guid: ae587172-cc15-48e1-8be0-29ddf05c6a1f }
@@ -206,3 +220,9 @@ inject:
   - name: VideoRouteDxe
     efi:  VideoRouteDxe.efi
     guid: c17b6e94-4a25-4d83-9f0b-6e83d2a10c57
+  # Reasserts Above 4G Decoding = Enabled and SR-IOV Support = Disabled in
+  # PCI_COMMON. Above 4G is what cleared the terminal POST 0x99 hang with the
+  # Tesla K80 installed, so this is a boot requirement, not a preference.
+  - name: OobSetupDefaultsDxe
+    efi:  OobSetupDefaultsDxe.efi
+    guid: 53c918ae-6f3b-4db5-aa69-c028199a6df7
