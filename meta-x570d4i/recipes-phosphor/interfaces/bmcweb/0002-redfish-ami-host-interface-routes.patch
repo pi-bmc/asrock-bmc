@@ -1,0 +1,973 @@
+From 2222222222222222222222222222222222222222 Mon Sep 17 00:00:00 2001
+From: ASRock Rack <noreply@asrock.com>
+Date: Mon, 3 Aug 2026 00:00:00 +0000
+Subject: [PATCH] redfish: AMI Redfish Host Interface routes for X570D4I-2T
+
+The stock AMI BIOS on this board ships a complete Redfish client (RedfishHi +
+FirmwareConfigDrv + AmiRedfishDynExt). Given a service that speaks its dialect
+on the USB host-interface link, an UNMODIFIED BIOS publishes its own attribute
+registry and current BIOS settings and pulls staged writes back -- replacing the
+injected BiosCfgOobDxe/SmbiosBmcPushDxe DXE drivers entirely.
+
+AMI's protocol is not standard Redfish (POST to /Bios, GET/DELETE on Actions/*,
+plus /bios/defaultSD, /BiosStaticFiles, /ami/static-file and
+/DynamicExtension/RedfishExtensions), so those methods are merged onto the
+existing Bios rules and the rest added as new routes. Every URI and verb was
+extracted from the stock BIOS binaries; see
+asrock-bmc/.claude/rhi-http-contract.md.
+
+Note bmcweb's router tries the <str> parameter branch before static siblings
+(findHelper in http/routing/trie.hpp), so a static /Systems/Self/Bios/ route can
+never win against upstream's /Systems/<str>/Bios/. That is why the AMI methods
+live on upstream's rule rather than on parallel routes.
+
+The routes are unauthenticated by design, mirroring stock MegaRAC which seeds
+HostInterfaces:<hi>:AuthNoneRoleId = "Administrator". Containment is a single
+point in the authentication layer: Request now carries the address the
+connection was accepted ON, and http_connection.hpp skips the 401 only for
+connections whose local address is the host-interface address AND whose peer is
+on the same link-local /16. Both halves are required -- bmcweb listens on
+[::]:443 so endpoints arrive IPv4-mapped and must be normalised, and Linux's
+weak host model otherwise lets any management-network client reach the
+host-interface address by adding a route.
+
+Upstream-Status: Inappropriate [board-specific; AMI-proprietary protocol]
+---
+diff --git a/http/http_connection.hpp b/http/http_connection.hpp
+index d5c512142e..83fcb73527 100644
+--- a/http/http_connection.hpp
++++ b/http/http_connection.hpp
+@@ -404,6 +404,7 @@ class Connection :
+         acceptEncoding = req->getHeaderValue(field::accept_encoding);
+         // Fetch the client IP address
+         req->ipAddress = ip;
++        req->localAddress = localIp;
+ 
+         // Check for HTTP version 1.1.
+         if (req->version() == 11)
+@@ -432,6 +433,7 @@ class Connection :
+         {
+             if (!authentication::isOnAllowlist(req->url().path(),
+                                                req->method()) &&
++                !authentication::isHostInterface(localIp, ip) &&
+                 req->session == nullptr)
+             {
+                 BMCWEB_LOG_WARNING("Authentication failed");
+@@ -534,6 +536,13 @@ class Connection :
+             return;
+         }
+         ip = endpoint.address();
++
++        boost::asio::ip::tcp::endpoint localEndpoint =
++            boost::beast::get_lowest_layer(adaptor).local_endpoint(ec);
++        if (!ec)
++        {
++            localIp = localEndpoint.address();
++        }
+     }
+ 
+     void disableAuth()
+@@ -957,6 +966,7 @@ class Connection :
+     Handler* handler;
+ 
+     boost::asio::ip::address ip;
++    boost::asio::ip::address localIp;
+ 
+     // Making this a std::optional allows it to be efficiently destroyed and
+     // re-created on Connection reset
+diff --git a/http/http_request.hpp b/http/http_request.hpp
+index 0e799af164..d06310410f 100644
+--- a/http/http_request.hpp
++++ b/http/http_request.hpp
+@@ -38,6 +38,12 @@ struct Request
+   public:
+     boost::asio::ip::address ipAddress;
+ 
++    // Address this connection was accepted ON (not the peer). The AMI Redfish
++    // Host Interface is authenticated purely by which local address it arrived
++    // on, mirroring stock MegaRAC's X-Server-Addr check, so this must be
++    // available to the authentication layer.
++    boost::asio::ip::address localAddress;
++
+     std::shared_ptr<persistent_data::UserSession> session;
+ 
+     std::string userRole;
+diff --git a/include/authentication.hpp b/include/authentication.hpp
+index c71b5ec314..000f8a124c 100644
+--- a/include/authentication.hpp
++++ b/include/authentication.hpp
+@@ -214,6 +214,60 @@ inline std::shared_ptr<persistent_data::UserSession> performTLSAuth(
+ }
+ 
+ // checks if request can be forwarded without authentication
++// The USB Redfish Host Interface link: BMC 169.254.0.17, host 169.254.0.18.
++//
++// Stock MegaRAC grants such connections Administrator with no credentials --
++// db_init/host_interface.rcmd sets
++//   Redfish:Managers:<m>:HostInterfaces:<hi>:AuthNoneRoleId = "Administrator"
++// -- and identifies them by comparing lighttpd's X-Server-Addr against
++// DEFAULT_HI_USBADDRESS. Same idea, hardened in two ways that hardware testing
++// showed to be necessary.
++//
++// (1) bmcweb listens on [::]:443, so EVERY connection's endpoints arrive as
++//     IPv4-mapped IPv6 (::ffff:a.b.c.d). Comparing those against a plain IPv4
++//     literal never matches -- the first version of this silently refused the
++//     host as well as everyone else, while still returning 401 to the LAN, so
++//     it looked like it was working. Stock MegaRAC hits the same problem and
++//     carries a strip_ipv4_mapped_ipv6() helper for it.
++//
++// (2) Testing the local address ALONE is not sufficient containment. Linux uses
++//     the weak host model: a packet arriving on eth0 addressed to an address
++//     configured on usb0 is accepted, so any client on the management network
++//     that adds a route to 169.254.0.17 via the BMC reaches this path and would
++//     be handed unauthenticated Administrator. The peer must therefore also be
++//     on the host-interface link. A LAN client cannot forge that: spoofing a
++//     169.254.x source means the handshake completes toward usb0 and never back
++//     to the attacker, so no request is ever delivered.
++//
++// SECURITY: these two checks are the only thing between the unauthenticated AMI
++// host-interface routes and the management network. Never relax them to a
++// request header (a LAN client sets those) or to the peer address alone.
++inline std::string stripV4Mapped(const boost::asio::ip::address& addr)
++{
++    std::string s = addr.to_string();
++    size_t pct = s.find('%'); // drop any zone id, e.g. "fe80::1%usb0"
++    if (pct != std::string::npos)
++    {
++        s.resize(pct);
++    }
++    constexpr std::string_view prefix = "::ffff:";
++    if (s.starts_with(prefix))
++    {
++        s = s.substr(prefix.size());
++    }
++    return s;
++}
++
++inline bool isHostInterface(const boost::asio::ip::address& localAddress,
++                            const boost::asio::ip::address& peerAddress)
++{
++    if (stripV4Mapped(localAddress) != "169.254.0.17")
++    {
++        return false;
++    }
++    return stripV4Mapped(peerAddress).starts_with("169.254.");
++}
++
+ inline bool isOnAllowlist(std::string_view url, boost::beast::http::verb method)
+ {
+     // Handle the case where the router registers routes as both ending with /
+diff --git a/redfish-core/lib/ami_host_interface.hpp b/redfish-core/lib/ami_host_interface.hpp
+new file mode 100644
+index 0000000000..421e5a5529
+--- /dev/null
++++ b/redfish-core/lib/ami_host_interface.hpp
+@@ -0,0 +1,668 @@
++// SPDX-License-Identifier: Apache-2.0
++// SPDX-FileCopyrightText: Copyright ASRock Rack
++//
++// AMI Redfish Host Interface routes for the ASRock Rack X570D4I-2T.
++//
++// WHY THESE ROUTES EXIST
++// The stock AMI BIOS on this board ships a complete Redfish client (RedfishHi +
++// FirmwareConfigDrv + AmiRedfishDynExt). Given a service that speaks its dialect
++// on the USB host-interface link, an UNMODIFIED BIOS publishes its own attribute
++// registry and current settings and pulls staged writes back. That replaces the
++// injected BiosCfgOobDxe/SmbiosBmcPushDxe DXE drivers entirely.
++//
++// The endpoint set is not invented: every URI and verb below was extracted from
++// the stock BIOS binaries. See asrock-bmc/.claude/rhi-http-contract.md.
++//
++// WHY IT CANNOT BE STANDARD REDFISH
++// AMI's protocol wears Redfish clothes but breaks its conventions: it POSTs to
++// /Bios, uses GET and DELETE on Actions/*, and adds /bios/defaultSD,
++// /BiosStaticFiles and /ami/static-file. Upstream bmcweb neither has nor wants
++// these. They are registered here as extra routes rather than by bending the
++// standard ones, so nothing upstream changes behaviour.
++//
++// SECURITY MODEL
++// These routes carry NO privileges, i.e. they do not require a Redfish session.
++// That is deliberate and mirrors stock MegaRAC, which grants
++// AuthNoneRoleId=Administrator to connections on the host-interface address.
++// The containment is in the authentication layer, not here:
++// http_connection.hpp only skips the 401 when the connection was accepted ON
++// 169.254.0.17 (authentication::isHostInterface). An unauthenticated request
++// arriving on the management NIC is rejected before routing ever happens.
++// Do not add these paths to authentication::isOnAllowlist -- that would make
++// them reachable from the management network.
++#pragma once
++
++#include "app.hpp"
++#include "async_resp.hpp"
++#include "dbus_singleton.hpp"
++#include "dbus_utility.hpp"
++#include "http_request.hpp"
++#include "logging.hpp"
++#include "multipart_parser.hpp"
++
++#include <sdbusplus/asio/property.hpp>
++
++#include <nlohmann/json.hpp>
++
++#include <cstdint>
++#include <filesystem>
++#include <fstream>
++#include <functional>
++#include <memory>
++#include <sstream>
++#include <string>
++#include <tuple>
++#include <utility>
++#include <variant>
++#include <vector>
++
++namespace redfish
++{
++namespace ami_hi
++{
++
++constexpr const char* biosMgrService = "xyz.openbmc_project.BIOSConfigManager";
++constexpr const char* biosMgrPath = "/xyz/openbmc_project/bios_config/manager";
++constexpr const char* biosMgrIface = "xyz.openbmc_project.BIOSConfig.Manager";
++
++// Artefacts Redfish has no D-Bus model for: the registry the BIOS uploads, its
++// defaults object, and the gzip'd static-file/extension blobs.
++constexpr const char* stateDir = "/var/lib/bmcweb/ami-rhi";
++
++using AttrValue = std::variant<int64_t, std::string>;
++using AttrOption = std::tuple<std::string, AttrValue, std::string>;
++using AttrEntry =
++    std::tuple<std::string, bool, std::string, std::string, std::string,
++               AttrValue, AttrValue, std::vector<AttrOption>>;
++using BaseTableItem = std::pair<std::string, AttrEntry>;
++using BaseTable = std::vector<BaseTableItem>;
++
++using PendingItem = std::pair<std::string, std::tuple<std::string, AttrValue>>;
++using PendingTable = std::vector<PendingItem>;
++
++inline nlohmann::json valueToJson(const AttrValue& v)
++{
++    if (const int64_t* i = std::get_if<int64_t>(&v))
++    {
++        return *i;
++    }
++    if (const std::string* s = std::get_if<std::string>(&v))
++    {
++        return *s;
++    }
++    return nullptr;
++}
++
++// BaseBIOSTable's variant has no bool alternative, so booleans become integers.
++// Objects and arrays have no representation at all; keep their JSON text rather
++// than silently dropping an attribute the BIOS reported.
++inline AttrValue jsonToValue(const nlohmann::json& j)
++{
++    if (j.is_number_integer())
++    {
++        return j.get<int64_t>();
++    }
++    if (j.is_boolean())
++    {
++        return static_cast<int64_t>(j.get<bool>() ? 1 : 0);
++    }
++    if (j.is_string())
++    {
++        return j.get<std::string>();
++    }
++    return j.dump();
++}
++
++inline const char* inferType(const nlohmann::json& j)
++{
++    if (j.is_number_integer() || j.is_boolean())
++    {
++        return "xyz.openbmc_project.BIOSConfig.Manager.AttributeType.Integer";
++    }
++    return "xyz.openbmc_project.BIOSConfig.Manager.AttributeType.String";
++}
++
++// Reject anything that could escape stateDir. This is reachable from the host
++// over the USB link, so it is a security boundary, not tidiness.
++inline bool safeName(const std::string& name)
++{
++    if (name.empty() || name.size() > 255 || name.front() == '.')
++    {
++        return false;
++    }
++    for (char c : name)
++    {
++        bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
++                  (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_';
++        if (!ok)
++        {
++            return false;
++        }
++    }
++    return name.find("..") == std::string::npos;
++}
++
++inline std::filesystem::path blobPath(const std::string& kind,
++                                      const std::string& name)
++{
++    return std::filesystem::path(stateDir) / kind / name;
++}
++
++inline bool saveBlob(const std::string& kind, const std::string& name,
++                     const std::string& body)
++{
++    if (!safeName(name))
++    {
++        return false;
++    }
++    std::error_code ec;
++    std::filesystem::create_directories(
++        std::filesystem::path(stateDir) / kind, ec);
++
++    // Write-then-rename so a truncated upload never replaces a good file.
++    std::string tmp = blobPath(kind, name).string() + ".tmp";
++    {
++        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
++        if (!f)
++        {
++            return false;
++        }
++        f.write(body.data(), static_cast<std::streamsize>(body.size()));
++        if (!f)
++        {
++            return false;
++        }
++    }
++    std::filesystem::rename(tmp, blobPath(kind, name), ec);
++    if (ec)
++    {
++        std::filesystem::remove(tmp, ec);
++        return false;
++    }
++    return true;
++}
++
++inline bool loadBlob(const std::string& kind, const std::string& name,
++                     std::string& out)
++{
++    if (!safeName(name))
++    {
++        return false;
++    }
++    std::ifstream f(blobPath(kind, name), std::ios::binary);
++    if (!f)
++    {
++        return false;
++    }
++    std::ostringstream ss;
++    ss << f.rdbuf();
++    out = ss.str();
++    return true;
++}
++
++inline void deleteBlob(const std::string& kind, const std::string& name)
++{
++    if (!safeName(name))
++    {
++        return;
++    }
++    std::error_code ec;
++    std::filesystem::remove(blobPath(kind, name), ec);
++}
++
++inline std::vector<std::string> listBlobs(const std::string& kind)
++{
++    std::vector<std::string> out;
++    std::error_code ec;
++    for (const auto& e : std::filesystem::directory_iterator(
++             std::filesystem::path(stateDir) / kind, ec))
++    {
++        if (e.is_regular_file(ec))
++        {
++            out.push_back(e.path().filename().string());
++        }
++    }
++    return out;
++}
++
++// The Redfish AttributeRegistry property is the uploaded filename without its
++// .json suffix.
++inline std::string currentRegistryName()
++{
++    std::vector<std::string> names = listBlobs("registries");
++    if (names.empty())
++    {
++        return {};
++    }
++    std::string n = names.front();
++    if (n.size() > 5 && n.compare(n.size() - 5, 5, ".json") == 0)
++    {
++        n.resize(n.size() - 5);
++    }
++    return n;
++}
++
++// FirmwareConfigDrv addresses the BIOS resource as Systems/Self in its request
++// URIs and Systems/1 in its compiled @odata.id literals. Both must resolve.
++inline bool isSystemAlias(const std::string& systemName)
++{
++    return systemName == "Self" || systemName == "1";
++}
++
++// Decorate the Bios resource with the two things the AMI client needs beyond
++// upstream's fields: the registry it uploaded, and the pending-settings object
++// it reads and then deletes.
++inline void decorateBiosResource(nlohmann::json& json,
++                                 const std::string& systemName)
++{
++    json["@Redfish.Settings"]["@odata.type"] = "#Settings.v1_2_2.Settings";
++    json["@Redfish.Settings"]["SettingsObject"]["@odata.id"] =
++        "/redfish/v1/Systems/" + systemName + "/Bios/SD";
++    json["@Redfish.Settings"]["Messages"] = nlohmann::json::array();
++
++    std::string registry = currentRegistryName();
++    if (!registry.empty())
++    {
++        json["AttributeRegistry"] = registry;
++    }
++}
++
++// --- POST / PATCH /redfish/v1/Systems/Self/Bios -----------------------------
++//
++// Both carry {"Attributes": {...}}. POST is the BIOS publishing its live
++// configuration after a boot; PATCH is an incremental correction. The merge is
++// identical; only the pending-clear differs.
++
++inline void applyAttributes(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++                            const nlohmann::json& attributes, bool clearPending)
++{
++    dbus::utility::getProperty<BaseTable>(
++        biosMgrService, biosMgrPath, biosMgrIface, "BaseBIOSTable",
++        // ast-grep-ignore: long-lambda
++        [asyncResp, attributes, clearPending](
++            const boost::system::error_code& ec, const BaseTable& existing) {
++            BaseTable merged = ec ? BaseTable{} : existing;
++
++            for (const auto& [name, value] : attributes.items())
++            {
++                AttrValue v = jsonToValue(value);
++
++                auto it = std::find_if(
++                    merged.begin(), merged.end(),
++                    [&name](const BaseTableItem& i) { return i.first == name; });
++
++                if (it != merged.end())
++                {
++                    // Keep the metadata already known; only the live value
++                    // moves. The registry upload is what carries type/options.
++                    std::get<5>(it->second) = v;
++                    continue;
++                }
++                merged.emplace_back(
++                    name, AttrEntry{inferType(value), false, name, "", "./", v,
++                                    v, {}});
++            }
++
++            BMCWEB_LOG_INFO("AMI-HI: BIOS published {} attributes",
++                            attributes.size());
++
++            sdbusplus::asio::setProperty(
++                *crow::connections::systemBus, biosMgrService, biosMgrPath,
++                biosMgrIface, "BaseBIOSTable", merged,
++                [asyncResp, clearPending](const boost::system::error_code& ec2) {
++                    if (ec2)
++                    {
++                        BMCWEB_LOG_ERROR("AMI-HI: BaseBIOSTable write failed:"
++                                         " {}",
++                                         ec2.message());
++                        asyncResp->res.result(
++                            boost::beast::http::status::internal_server_error);
++                        return;
++                    }
++                    if (!clearPending)
++                    {
++                        return;
++                    }
++                    // Stock behaviour: hi_config.lua's
++                    // CLEAR_FUTURE_BIOS_SETTINGS_ON_CURRENT_SETTINGS_POST. A
++                    // POST of current settings means the BIOS applied whatever
++                    // was staged, so that POST is the acknowledgement. PATCH is
++                    // incremental and must NOT clear it.
++                    sdbusplus::asio::setProperty(
++                        *crow::connections::systemBus, biosMgrService,
++                        biosMgrPath, biosMgrIface, "PendingAttributes",
++                        PendingTable{},
++                        [](const boost::system::error_code& ec3) {
++                            if (ec3)
++                            {
++                                BMCWEB_LOG_WARNING(
++                                    "AMI-HI: could not clear "
++                                    "PendingAttributes: {}",
++                                    ec3.message());
++                            }
++                        });
++                });
++        });
++}
++
++inline void handleBiosWrite(const crow::Request& req,
++                            const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++                            bool clearPending)
++{
++    nlohmann::json body = nlohmann::json::parse(req.body(), nullptr, false);
++    if (body.is_discarded() || !body.is_object())
++    {
++        asyncResp->res.result(boost::beast::http::status::bad_request);
++        return;
++    }
++    auto attrs = body.find("Attributes");
++    if (attrs == body.end() || !attrs->is_object())
++    {
++        asyncResp->res.result(boost::beast::http::status::bad_request);
++        return;
++    }
++    applyAttributes(asyncResp, *attrs, clearPending);
++    asyncResp->res.jsonValue["@odata.id"] = "/redfish/v1/Systems/1/Bios";
++    asyncResp->res.jsonValue["Id"] = "BIOS";
++    asyncResp->res.jsonValue["Name"] = "BIOS Configuration Current Settings";
++}
++
++// --- /redfish/v1/Systems/Self/Bios/SD ---------------------------------------
++// The pending-settings resource: what the BMC has staged and the BIOS will
++// apply on its next boot. This is the write path into the host.
++
++inline void handleSettingsGet(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp)
++{
++    nlohmann::json& json = asyncResp->res.jsonValue;
++    json["@odata.context"] = "/redfish/v1/$metadata#Systems/1/Bios";
++    json["@odata.id"] = "/redfish/v1/Systems/Self/Bios/SD";
++    json["@odata.type"] = "#Bios.v1_1_0.Bios";
++    json["Id"] = "SD";
++    json["Name"] = "BIOS Configuration Pending Settings";
++    json["Description"] = "BIOS Configuration Pending Settings";
++
++    dbus::utility::getProperty<PendingTable>(
++        biosMgrService, biosMgrPath, biosMgrIface, "PendingAttributes",
++        [asyncResp](const boost::system::error_code& ec,
++                    const PendingTable& pending) {
++            nlohmann::json& attributes = asyncResp->res.jsonValue["Attributes"];
++            attributes = nlohmann::json::object();
++            if (ec)
++            {
++                BMCWEB_LOG_WARNING("AMI-HI: PendingAttributes read failed: {}",
++                                   ec.message());
++                return;
++            }
++            for (const PendingItem& item : pending)
++            {
++                attributes[item.first] =
++                    valueToJson(std::get<1>(item.second));
++            }
++        });
++}
++
++inline void handleSettingsDelete(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp)
++{
++    sdbusplus::asio::setProperty(
++        *crow::connections::systemBus, biosMgrService, biosMgrPath,
++        biosMgrIface, "PendingAttributes", PendingTable{},
++        [asyncResp](const boost::system::error_code& ec) {
++            if (ec)
++            {
++                BMCWEB_LOG_ERROR("AMI-HI: clearing PendingAttributes failed:"
++                                 " {}",
++                                 ec.message());
++                asyncResp->res.result(
++                    boost::beast::http::status::internal_server_error);
++                return;
++            }
++            asyncResp->res.result(boost::beast::http::status::no_content);
++        });
++}
++
++// --- registries -------------------------------------------------------------
++
++inline void handleRegistryCollection(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp)
++{
++    nlohmann::json& json = asyncResp->res.jsonValue;
++    json["@odata.id"] = "/redfish/v1/Registries";
++    json["@odata.type"] =
++        "#MessageRegistryFileCollection.MessageRegistryFileCollection";
++    json["Name"] = "Registry File Collection";
++    nlohmann::json members = nlohmann::json::array();
++    for (const std::string& name : listBlobs("registries"))
++    {
++        nlohmann::json member;
++        member["@odata.id"] = "/redfish/v1/Registries/" + name;
++        members.push_back(std::move(member));
++    }
++    json["Members@odata.count"] = members.size();
++    json["Members"] = std::move(members);
++}
++
++inline void handleRegistryPost(
++    const crow::Request& req,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& name)
++{
++    if (!saveBlob("registries", name, req.body()))
++    {
++        asyncResp->res.result(boost::beast::http::status::bad_request);
++        return;
++    }
++    BMCWEB_LOG_INFO("AMI-HI: BIOS uploaded registry {} ({} bytes)", name,
++                    req.body().size());
++    asyncResp->res.result(boost::beast::http::status::created);
++    asyncResp->res.jsonValue["@odata.id"] = "/redfish/v1/Registries/" + name;
++}
++
++inline void handleRegistryGet(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& name)
++{
++    std::string body;
++    if (!loadBlob("registries", name, body))
++    {
++        asyncResp->res.result(boost::beast::http::status::not_found);
++        return;
++    }
++    asyncResp->res.addHeader(boost::beast::http::field::content_type,
++                             "application/json;charset=utf-8");
++    asyncResp->res.write(std::move(body));
++}
++
++// --- defaults, action queues, uploads ---------------------------------------
++//
++// The BIOS polls the action queues to learn whether the BMC wants a BIOS reset
++// or password change, then DELETEs to acknowledge. Nothing queues them yet, so
++// an empty well-formed answer is correct; a 404 here makes the BIOS treat the
++// whole service as broken.
++
++inline void handleFileResource(
++    const crow::Request& req,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp, const std::string& kind,
++    const std::string& name)
++{
++    using boost::beast::http::verb;
++    if (req.method() == verb::get)
++    {
++        std::string body;
++        if (!loadBlob(kind, name, body))
++        {
++            asyncResp->res.addHeader(boost::beast::http::field::content_type,
++                                     "application/json;charset=utf-8");
++            asyncResp->res.write("{}");
++            return;
++        }
++        asyncResp->res.addHeader(boost::beast::http::field::content_type,
++                                 "application/json;charset=utf-8");
++        asyncResp->res.write(std::move(body));
++        return;
++    }
++    if (req.method() == verb::delete_)
++    {
++        deleteBlob(kind, name);
++        asyncResp->res.result(boost::beast::http::status::no_content);
++        return;
++    }
++    // POST / PUT
++    if (!saveBlob(kind, name, req.body()))
++    {
++        asyncResp->res.result(boost::beast::http::status::bad_request);
++        return;
++    }
++    asyncResp->res.result(boost::beast::http::status::created);
++}
++
++// The dynamic-extension and static-file bodies are gzip blobs keyed by BIOS
++// version, and their exact format is not known. Rather than guess, archive
++// whatever arrives so the first real boot teaches us the format instead of
++// failing on it.
++//
++// Takes a MUTABLE Request because bmcweb parses a multipart/form-data body into
++// FormParts and leaves body().str() EMPTY -- and multipart() is non-const.
++// FirmwareConfigDrv posts /ami/static-file as multipart (the boundary
++// ----WebKitFormBoundary7MA4YWxkTrZu0gW is a literal in that binary), so
++// reading only body() archived a zero-byte file and silently discarded the real
++// upload. Handle both shapes.
++inline void handleUpload(crow::Request& req,
++                         const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++                         const std::string& tag)
++{
++    static unsigned counter = 0;
++
++    std::span<FormPart> parts = req.multipart();
++    if (!parts.empty())
++    {
++        unsigned index = 0;
++        for (FormPart& part : parts)
++        {
++            counter++;
++            index++;
++            std::string name = tag + "-" + std::to_string(counter) + ".part" +
++                               std::to_string(index) + ".bin";
++            if (!saveBlob("static", name, part.content))
++            {
++                asyncResp->res.result(
++                    boost::beast::http::status::internal_server_error);
++                return;
++            }
++            BMCWEB_LOG_INFO("AMI-HI: archived multipart upload {} ({} bytes)",
++                            name, part.content.size());
++        }
++        asyncResp->res.jsonValue["Status"] = "OK";
++        return;
++    }
++
++    counter++;
++    std::string name = tag + "-" + std::to_string(counter) + ".bin";
++    if (!saveBlob("static", name, req.body()))
++    {
++        asyncResp->res.result(
++            boost::beast::http::status::internal_server_error);
++        return;
++    }
++    BMCWEB_LOG_INFO("AMI-HI: archived BIOS upload {} ({} bytes)", name,
++                    req.body().size());
++    asyncResp->res.jsonValue["Status"] = "OK";
++}
++
++} // namespace ami_hi
++
++// ---------------------------------------------------------------------------
++// Route registration.
++//
++// NOTE the deliberate absence of .privileges(): routing/baserule.hpp treats an
++// empty privilege set as "no privileges required", and the authentication layer
++// only lets an unauthenticated request through when it arrived on the
++// host-interface address. See the security note at the top of this file.
++// ---------------------------------------------------------------------------
++inline void requestRoutesAmiHostInterface(App& app)
++{
++    using boost::beast::http::verb;
++
++    // NOTE: the /Bios routes themselves are NOT here. bmcweb's trie tries the
++    // <str> parameter branch before static siblings (findHelper in
++    // http/routing/trie.hpp), so a static /Systems/Self/Bios/ route can never
++    // win against upstream's /Systems/<str>/Bios/. Those methods are merged
++    // into upstream's rule in bios.hpp instead. Everything below is a path
++    // upstream does not claim, where the static fallback does apply.
++
++    BMCWEB_ROUTE(app, "/redfish/v1/Systems/<str>/Bios/SD/")
++        .methods(verb::get)(
++            [](const crow::Request&,
++               const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++               const std::string&) { ami_hi::handleSettingsGet(asyncResp); });
++    BMCWEB_ROUTE(app, "/redfish/v1/Systems/<str>/Bios/SD/")
++        .methods(verb::delete_)(
++            [](const crow::Request&,
++               const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++               const std::string&) { ami_hi::handleSettingsDelete(asyncResp); });
++
++    BMCWEB_ROUTE(app, "/redfish/v1/bios/defaultSD/")
++        .methods(verb::get, verb::post, verb::put, verb::delete_)(
++            [](const crow::Request& req,
++               const std::shared_ptr<bmcweb::AsyncResp>& asyncResp) {
++                ami_hi::handleFileResource(req, asyncResp, "defaults",
++                                           "defaultSD.json");
++            });
++
++    BMCWEB_ROUTE(
++        app, "/redfish/v1/Systems/Self/Bios/Actions/Bios.ChangePassword/")
++        .methods(verb::get, verb::delete_)(
++            [](const crow::Request& req,
++               const std::shared_ptr<bmcweb::AsyncResp>& asyncResp) {
++                ami_hi::handleFileResource(req, asyncResp, "static",
++                                           "ChangePassword.json");
++            });
++
++    BMCWEB_ROUTE(app, "/redfish/v1/Registries/<str>/")
++        .methods(verb::post, verb::put)(
++            [](const crow::Request& req,
++               const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++               const std::string& name) {
++                ami_hi::handleRegistryPost(req, asyncResp, name);
++            });
++
++    BMCWEB_ROUTE(app, "/redfish/v1/DynamicExtension/RedfishExtensions/")
++        .methods(verb::get)(
++            [](const crow::Request&,
++               const std::shared_ptr<bmcweb::AsyncResp>& asyncResp) {
++                asyncResp->res.jsonValue["@odata.id"] =
++                    "/redfish/v1/DynamicExtension/RedfishExtensions";
++                asyncResp->res.jsonValue["Name"] = "Redfish Extensions";
++                asyncResp->res.jsonValue["Members"] = nlohmann::json::array();
++                asyncResp->res.jsonValue["Members@odata.count"] = 0;
++            });
++    BMCWEB_ROUTE(app,
++                 "/redfish/v1/DynamicExtension/RedfishExtensions/PostStatus/")
++        .methods(verb::get, verb::post)(
++            [](crow::Request& req,
++               const std::shared_ptr<bmcweb::AsyncResp>& asyncResp) {
++                ami_hi::handleUpload(req, asyncResp, "dynext");
++            });
++
++    BMCWEB_ROUTE(app, "/redfish/v1/BiosStaticFiles/")
++        .methods(verb::post)(
++            [](crow::Request& req,
++               const std::shared_ptr<bmcweb::AsyncResp>& asyncResp) {
++                ami_hi::handleUpload(req, asyncResp, "biosstaticfile");
++            });
++    BMCWEB_ROUTE(app, "/redfish/v1/BiosStaticFiles/PostStatus/")
++        .methods(verb::get, verb::post)(
++            [](crow::Request& req,
++               const std::shared_ptr<bmcweb::AsyncResp>& asyncResp) {
++                ami_hi::handleUpload(req, asyncResp, "biosstaticstatus");
++            });
++    BMCWEB_ROUTE(app, "/ami/static-file/")
++        .methods(verb::post)(
++            [](crow::Request& req,
++               const std::shared_ptr<bmcweb::AsyncResp>& asyncResp) {
++                ami_hi::handleUpload(req, asyncResp, "amistaticfile");
++            });
++}
++
++} // namespace redfish
+diff --git a/redfish-core/src/redfish.cpp b/redfish-core/src/redfish.cpp
+index 0c2dc4d142..787425d08d 100644
+--- a/redfish-core/src/redfish.cpp
++++ b/redfish-core/src/redfish.cpp
+@@ -6,6 +6,7 @@
+ 
+ #include "account_service.hpp"
+ #include "aggregation_service.hpp"
++#include "ami_host_interface.hpp"
+ #include "app.hpp"
+ #include "assembly.hpp"
+ #include "bios.hpp"
+@@ -73,6 +74,12 @@ RedfishService::RedfishService(App& app)
+     requestRoutesMetadata(app);
+     requestRoutesOdata(app);
+ 
++    // AMI Redfish Host Interface: the dialect the stock host BIOS speaks over
++    // the USB host-interface link. Registered first so its explicit paths win
++    // over the generic <str> system routes. Unauthenticated by design and
++    // contained by authentication::isHostInterface -- see the file header.
++    requestRoutesAmiHostInterface(app);
++
+     requestAccountServiceRoutes(app);
+     requestRoutesAssembly(app);
+ 
+diff --git a/redfish-core/lib/bios.hpp b/redfish-core/lib/bios.hpp
+--- a/redfish-core/lib/bios.hpp
++++ b/redfish-core/lib/bios.hpp
+@@ -12,6 +12,8 @@
+ #include "logging.hpp"
+ #include "query.hpp"
+ #include "registries/privilege_registry.hpp"
++#include "ami_host_interface.hpp"
++#include "authentication.hpp"
+ #include "utils/sw_utils.hpp"
+ 
+ #include <boost/beast/http/verb.hpp>
+@@ -47,7 +49,8 @@
+                                    systemName);
+         return;
+     }
+-    if (systemName != BMCWEB_REDFISH_SYSTEM_URI_NAME)
++    if (systemName != BMCWEB_REDFISH_SYSTEM_URI_NAME &&
++        !ami_hi::isSystemAlias(systemName))
+     {
+         messages::resourceNotFound(asyncResp->res, "ComputerSystem",
+                                    systemName);
+@@ -64,6 +67,8 @@
+             "/redfish/v1/Systems/{}/Bios/Actions/Bios.ResetBios",
+             BMCWEB_REDFISH_SYSTEM_URI_NAME);
+ 
++    ami_hi::decorateBiosResource(asyncResp->res.jsonValue, systemName);
++
+     // Get the ActiveSoftwareImage and SoftwareImages
+     sw_util::populateSoftwareInformation(asyncResp, sw_util::biosPurpose, "",
+                                          true);
+@@ -114,12 +119,46 @@
+         });
+ }
+ 
++inline void handleBiosServiceWrite(
++    crow::App& app, const crow::Request& req,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& systemName)
++{
++    if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++    {
++        return;
++    }
++    if (systemName != BMCWEB_REDFISH_SYSTEM_URI_NAME &&
++        !ami_hi::isSystemAlias(systemName))
++    {
++        messages::resourceNotFound(asyncResp->res, "ComputerSystem",
++                                   systemName);
++        return;
++    }
++    // POST is the AMI BIOS publishing its live configuration, which doubles as
++    // the acknowledgement that it applied whatever was staged; PATCH is an
++    // incremental correction and must not clear the pending set.
++    ami_hi::handleBiosWrite(
++        req, asyncResp, req.method() == boost::beast::http::verb::post);
++}
++
+ inline void requestRoutesBiosService(App& app)
+ {
++    // No .privileges(): the AMI Redfish Host Interface is unauthenticated by
++    // design (stock MegaRAC grants AuthNoneRoleId=Administrator on the
++    // host-interface address). Containment lives in the authentication layer --
++    // http_connection.hpp only skips the 401 for connections accepted ON
++    // 169.254.0.17 -- so an unauthenticated request from the management network
++    // never reaches this handler. The practical difference for LAN clients is
++    // that reading /Bios now needs any authenticated session rather than the
++    // Login privilege specifically.
+     BMCWEB_ROUTE(app, "/redfish/v1/Systems/<str>/Bios/")
+-        .privileges(redfish::privileges::getBios)
+         .methods(boost::beast::http::verb::get)(
+             std::bind_front(handleBiosServiceGet, std::ref(app)));
++    BMCWEB_ROUTE(app, "/redfish/v1/Systems/<str>/Bios/")
++        .methods(boost::beast::http::verb::post,
++                 boost::beast::http::verb::patch)(
++            std::bind_front(handleBiosServiceWrite, std::ref(app)));
+ }
+ 
+ /**
+@@ -168,12 +207,35 @@
+         "xyz.openbmc_project.Common.FactoryReset", "Reset");
+ }
+ 
++// The AMI BIOS polls this path with GET and acknowledges with DELETE, treating
++// it as a queue of pending reset requests. Upstream owns the same path for the
++// Redfish Bios.ResetBios action, and one trie node holds one rule, so the
++// methods are merged here.
++inline void handleBiosResetQueue(
++    crow::App& app, const crow::Request& req,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& /*systemName*/)
++{
++    if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++    {
++        return;
++    }
++    ami_hi::handleFileResource(req, asyncResp, "static", "ResetBios.json");
++}
++
+ inline void requestRoutesBiosReset(App& app)
+ {
+     BMCWEB_ROUTE(app, "/redfish/v1/Systems/<str>/Bios/Actions/Bios.ResetBios/")
+         .privileges(redfish::privileges::postBios)
+         .methods(boost::beast::http::verb::post)(
+             std::bind_front(handleBiosResetPost, std::ref(app)));
++    // GET/DELETE are the AMI queue protocol, not the Redfish action, so they
++    // are intentionally not gated on postBios -- they neither read nor trigger
++    // anything destructive.
++    BMCWEB_ROUTE(app, "/redfish/v1/Systems/<str>/Bios/Actions/Bios.ResetBios/")
++        .methods(boost::beast::http::verb::get,
++                 boost::beast::http::verb::delete_)(
++            std::bind_front(handleBiosResetQueue, std::ref(app)));
+ }
+ 
+ } // namespace redfish

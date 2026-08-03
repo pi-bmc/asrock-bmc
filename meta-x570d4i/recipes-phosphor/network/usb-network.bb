@@ -12,6 +12,7 @@ inherit allarch systemd
 
 SRC_URI += "file://usb-network.service \
             file://usb_network.sh \
+            file://00-bmc-usb0.link \
             file://00-bmc-usb0.network"
 
 do_install() {
@@ -19,6 +20,7 @@ do_install() {
     install -m 0644 ${UNPACKDIR}/usb-network.service ${D}${systemd_system_unitdir}
 
     install -d ${D}${sysconfdir_native}/systemd/network/
+    install -m 0644 ${UNPACKDIR}/00-bmc-usb0.link ${D}${sysconfdir_native}/systemd/network
     install -m 0644 ${UNPACKDIR}/00-bmc-usb0.network ${D}${sysconfdir_native}/systemd/network
 
     install -d ${D}/${sbindir}

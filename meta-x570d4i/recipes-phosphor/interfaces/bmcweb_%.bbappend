@@ -1,13 +1,32 @@
-# bmcweb tuning for the X570D4I-2T. No OEM Redfish Host Interface routes are
-# added on this board: the in-band USB-NIC / Redfish Host Interface approach was
-# removed entirely. SMBIOS arrives over IPMI (AMI-MDR, handled in
-# asrock-ipmi-oem). The host BIOS pushes its full attribute table in-band over
-# KCS (asrock-ipmi-oem BIOS-config commands -> BaseBIOSTable); the patch below
-# re-adds the bmcweb /Bios "Attributes" view that upstream removed, so that
-# live config surfaces at /redfish/v1/Systems/system/Bios.
+# bmcweb tuning for the X570D4I-2T.
+#
+# Two BIOS-config transports converge on the same D-Bus properties
+# (xyz.openbmc_project.BIOSConfig.Manager BaseBIOSTable / PendingAttributes),
+# so there is exactly one source of truth:
+#
+#   0001 — in-band over KCS. The host pushes its attribute table via
+#          asrock-ipmi-oem's BIOS-config commands; this patch re-adds the /Bios
+#          "Attributes" view upstream removed, surfacing live config at
+#          /redfish/v1/Systems/system/Bios.
+#
+#   0002 — the AMI Redfish Host Interface. The STOCK host BIOS already contains
+#          a Redfish client (RedfishHi + FirmwareConfigDrv + AmiRedfishDynExt);
+#          given these routes on the USB host-interface link it publishes its
+#          own registry and settings and pulls staged writes back, with no
+#          firmware modification. That is the path intended to retire the
+#          injected DXE drivers. AMI's dialect is not standard Redfish, so it
+#          cannot be served by upstream routes; and it is unauthenticated by
+#          design, contained to connections accepted on 169.254.0.17. Endpoint
+#          set extracted from the stock BIOS binaries — see
+#          asrock-bmc/.claude/rhi-http-contract.md.
+#
+# SMBIOS still arrives over IPMI (blob handler; see smbios-mdr_%.bbappend).
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
-SRC_URI += "file://0001-redfish-bios-attributes-from-basebiostable.patch"
+SRC_URI += " \
+    file://0001-redfish-bios-attributes-from-basebiostable.patch \
+    file://0002-redfish-ami-host-interface-routes.patch \
+    "
 
 # Disable bmcweb's zstd HTTP compression.
 #

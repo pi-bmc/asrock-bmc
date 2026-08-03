@@ -1,0 +1,8 @@
+[Match]
+Driver=usb_f_rndis g_ether
+Name=usb0
+
+[Link]
+Name=usb0
+MTUBytes=1500
+MACAddressPolicy=none

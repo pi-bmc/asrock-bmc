@@ -33,6 +33,7 @@ SRC_URI = " \
     file://src/biosvarstore.cpp \
     file://src/biosvarstore.hpp \
     file://src/biosxml.hpp \
+    file://src/redfishhicommands.cpp \
     file://src/types.hpp \
     file://files/asrock-bios-flash-sync.sh \
     file://files/asrock-bios-flash-monitor.sh \
@@ -55,6 +56,30 @@ inherit meson pkgconfig obmc-phosphor-ipmiprovider-symlink systemd
 # The BIOS flash is only reachable while the host is off, so the sync runs off a
 # D-Bus power-state watcher rather than a boot-time oneshot.
 SYSTEMD_SERVICE:${PN} += "asrock-bios-flash-monitor.service"
+
+# Shipped DISABLED (2026-08-03). The monitor runs the sync in "auto" mode, which
+# rewrites the *entire* 32 MiB host BIOS image with flashcp whenever
+# PendingAttributes is non-empty -- unattended, triggered only by a chassis
+# power-off signal. Three things make that unsafe on this board:
+#
+#   1. Heavy 32 MiB MTD I/O has repeatedly crashed the BMC (again 2026-08-03
+#      05:13:50). A crash during the read is harmless; during the flashcp it
+#      leaves a partially erased BIOS -- a brick.
+#   2. The unit is Restart=always, and systemd kills the whole cgroup on
+#      restart, so an in-flight flashcp can be killed mid-write. The mkdir lock
+#      does not help: the script rmdir's it unconditionally at startup.
+#   3. flashcp writes back a *cached snapshot*, so it would roll back the APOB
+#      (AGESA memory-training output, 0x1509000) and APCB (PSP config block,
+#      0x1796000) that the BIOS legitimately rewrites on every POST.
+#
+# It also yanks the BIOS SPI mux for ~20 s per run and re-fires on repeated
+# PowerState.Off signals (6 runs in one BMC boot were observed), which is a
+# boot-killer if the host powers on inside that window.
+#
+# Re-enable deliberately (systemctl enable --now asrock-bios-flash-monitor), or
+# better, change the monitor's "$SYNC" auto invocation to "$SYNC" sync so the
+# read/publish path stays automatic and the flash-write path stays manual.
+SYSTEMD_AUTO_ENABLE:${PN} = "disable"
 
 do_install:append() {
     install -d ${D}${libexecdir}

@@ -37,6 +37,14 @@ ipmid_dep                = dependency('libipmid')
 nlohmann_json_dep        = dependency('nlohmann_json')
 liblzma_dep              = dependency('liblzma')
 
+# The DSP0270 bootstrap handler calls into phosphor-ipmi-host's user and channel
+# layers. These are NOT exported by the ipmid executable -- they live in their
+# own shared libraries, so relying on the provider's b_lundef=false to resolve
+# them at dlopen time fails with "undefined symbol: ipmi::ipmiSetSpecialUserPassword".
+# They must be linked explicitly.
+userlayer_dep            = dependency('libuserlayer')
+channellayer_dep         = dependency('libchannellayer')
+
 tinyxml_dep = dependency(
     'tinyxml2',
     default_options: ['tests=false'],
@@ -50,6 +58,8 @@ asrock_oem_deps = [
     nlohmann_json_dep,
     liblzma_dep,
     tinyxml_dep,
+    userlayer_dep,
+    channellayer_dep,
 ]
 
 # -----------------------------------------------------------------------
@@ -73,10 +83,16 @@ asrock_oem_deps = [
 #     read them) and type 3 "ASPS" (BMC -> host, PendingAttributes encoded as
 #     varstore writes).  Shared with asrock-bios-nvram so both agree on option
 #     parsing and value spelling.
+#   * redfishhicommands.cpp — DMTF DSP0270 credential bootstrapping over KCS
+#     (NetFn 0x2C, group extension 0x52, cmd 0x02 "Get Bootstrap Account
+#     Credentials"). Upstream phosphor-ipmi-host registers no 0x2C group beyond
+#     DCMI/SBMR, so a DSP0270-conformant BIOS otherwise gets 0xC1 and has no way
+#     to authenticate to the Redfish host interface on usb0.
 asrockoemcmds_src = [
     'src/kcsmonitor.cpp',
     'src/biosconfigcommands.cpp',
     'src/biosvarstore.cpp',
+    'src/redfishhicommands.cpp',
 ]
 
 # -----------------------------------------------------------------------
