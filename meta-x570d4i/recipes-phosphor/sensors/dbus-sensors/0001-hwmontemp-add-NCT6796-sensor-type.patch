@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Nick Atkins <nbatkins@gmail.com>
+Date: Sun, 2 Aug 2026 00:00:00 +0000
+Subject: [PATCH] hwmontemp: add NCT6796 sensor type
+
+The ASRock Rack X570D4I-2T carries a Nuvoton NCT6796D Super-I/O
+hardware monitor, reachable from the BMC over its i2c back door at
+1-002d. The stock AMI MegaRAC firmware drives it as an NCT6796D
+(libipmipar.so exports dev_nct6796d_v0dot1_*).
+
+Only NCT6779 was selectable, and nct6775_i2c_probe() takes the chip
+kind straight from the i2c_device_id with no chip-ID verification, so
+binding an NCT6796D as "nct6779" silently applies the wrong
+temperature configuration: NCT6779_TEMP_MASK is 0x07ffff7e where
+NCT6796_TEMP_MASK is 0xbfff0ffe, and the two temp_label tables diverge
+from index 7 onward (nct6779 has "" / SMBUSMASTER 0-3 where nct6796
+has AUXTIN4 / SMBUSMASTER 0-1 / Virtual_TEMP). The register maps are
+shared, so temp1/SYSTIN happens to survive, but every source above it
+is mislabelled or missing.
+
+The kernel's nct6775-i2c driver already carries an "nct6796" entry in
+nct6775_i2c_id, so this only needs plumbing through.
+
+Signed-off-by: Nick Atkins <nbatkins@gmail.com>
+---
+ src/hwmon-temp/HwmonTempMain.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/hwmon-temp/HwmonTempMain.cpp b/src/hwmon-temp/HwmonTempMain.cpp
+index 1111111..2222222 100644
+--- a/src/hwmon-temp/HwmonTempMain.cpp
++++ b/src/hwmon-temp/HwmonTempMain.cpp
+@@ -84,6 +84,7 @@ static constexpr auto sensorTypes =
+         {"MAX6639", I2CDeviceType{"max6639", true}},
+         {"MCP9600", I2CDeviceType{"mcp9600", false}},
+         {"NCT6779", I2CDeviceType{"nct6779", true}},
++        {"NCT6796", I2CDeviceType{"nct6796", true}},
+         {"NCT7802", I2CDeviceType{"nct7802", true}},
+         {"PT5161L", I2CDeviceType{"pt5161l", true}},
+         {"SBTSI", I2CDeviceType{"sbtsi", true}},

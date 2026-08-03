@@ -10,25 +10,25 @@
                         "Direction": "greater than",
                         "Name": "upper critical",
                         "Severity": 1,
-                        "Value": 3.74
+                        "Value": 3.88
                     },
                     {
                         "Direction": "greater than",
                         "Name": "upper non critical",
                         "Severity": 0,
-                        "Value": 3.52
+                        "Value": 3.7
                     },
                     {
                         "Direction": "less than",
                         "Name": "lower non critical",
                         "Severity": 0,
-                        "Value": 3.18
+                        "Value": 3.04
                     },
                     {
                         "Direction": "less than",
                         "Name": "lower critical",
                         "Severity": 1,
-                        "Value": 3.06
+                        "Value": 2.88
                     }
                 ],
                 "Type": "ADC"
@@ -42,25 +42,25 @@
                         "Direction": "greater than",
                         "Name": "upper critical",
                         "Severity": 1,
-                        "Value": 5.49
+                        "Value": 5.73
                     },
                     {
                         "Direction": "greater than",
                         "Name": "upper non critical",
                         "Severity": 0,
-                        "Value": 5.245
+                        "Value": 5.49
                     },
                     {
                         "Direction": "less than",
                         "Name": "lower non critical",
                         "Severity": 0,
-                        "Value": 4.75
+                        "Value": 4.5
                     },
                     {
                         "Direction": "less than",
                         "Name": "lower critical",
                         "Severity": 1,
-                        "Value": 4.5
+                        "Value": 4.26
                     }
                 ],
                 "Type": "ADC"
@@ -473,7 +473,7 @@
                         "Value": 70
                     }
                 ],
-                "Type": "NCT6779"
+                "Type": "NCT6796"
             },
             {
                 "Address": "0x4F",
@@ -495,6 +495,90 @@
                     }
                 ],
                 "Type": "TMP75"
+            },
+            {
+                "Address": "0x18",
+                "Bus": 7,
+                "Name": "DDR4_A2_Temp",
+                "PowerState": "On",
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper non critical",
+                        "Severity": 0,
+                        "Value": 84
+                    },
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 85
+                    }
+                ],
+                "Type": "JC42"
+            },
+            {
+                "Address": "0x19",
+                "Bus": 7,
+                "Name": "DDR4_A1_Temp",
+                "PowerState": "On",
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper non critical",
+                        "Severity": 0,
+                        "Value": 84
+                    },
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 85
+                    }
+                ],
+                "Type": "JC42"
+            },
+            {
+                "Address": "0x1A",
+                "Bus": 7,
+                "Name": "DDR4_B2_Temp",
+                "PowerState": "On",
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper non critical",
+                        "Severity": 0,
+                        "Value": 84
+                    },
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 85
+                    }
+                ],
+                "Type": "JC42"
+            },
+            {
+                "Address": "0x1B",
+                "Bus": 7,
+                "Name": "DDR4_B1_Temp",
+                "PowerState": "On",
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper non critical",
+                        "Severity": 0,
+                        "Value": 84
+                    },
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 85
+                    }
+                ],
+                "Type": "JC42"
             },
             {
                 "Connector": {
@@ -602,7 +686,7 @@
                 "Type": "SPIFlash"
             }
         ],
-        "Name": "ASRock Rack X470D4I",
+        "Name": "ASRock Rack X570D4I-2T",
         "Probe": "xyz.openbmc_project.FruDevice({'BOARD_PRODUCT_NAME': 'X570D4I-(2T|NL)?', 'BOARD_MANUFACTURER': 'ASRockRack'})",
         "Type": "Board",
         "xyz.openbmc_project.Inventory.Decorator.Asset": {
