@@ -81,41 +81,40 @@ asrock_oem_deps = [
 #   * biosvarstore.cpp — the two payload formats that carry live values:
 #     type 2 "ASVS" (host -> BMC, the backing UEFI variables as the firmware
 #     read them) and type 3 "ASPS" (BMC -> host, PendingAttributes encoded as
-#     varstore writes).  Shared with asrock-bios-nvram so both agree on option
-#     parsing and value spelling.
+#     varstore writes).
 #   * redfishhicommands.cpp — DMTF DSP0270 credential bootstrapping over KCS
 #     (NetFn 0x2C, group extension 0x52, cmd 0x02 "Get Bootstrap Account
 #     Credentials"). Upstream phosphor-ipmi-host registers no 0x2C group beyond
 #     DCMI/SBMR, so a DSP0270-conformant BIOS otherwise gets 0xC1 and has no way
 #     to authenticate to the Redfish host interface on usb0.
+#   * amioemcommands.cpp — accept-and-log responder for the AMI OEM handshake
+#     the stock BIOS drives during POST (NetFn 0x3A: BD BE B5 B2 F3 A1 AB;
+#     NetFn 0x32: 72 5D 3D). Unanswered, the BIOS retries each ten times and
+#     aborts before it ever reaches the NetFn 0x30 config transfer above.
+#
+# ---------------------------------------------------------------------------
+# NO DIRECT FLASH ACCESS (refactored 2026-08-03)
+# ---------------------------------------------------------------------------
+# This package used to ship asrock-bios-nvram plus flash-sync/flash-monitor
+# scripts, which pulled the BIOS SPI mux, bound spi1.0 and read/wrote /dev/mtd6
+# to source BIOS attribute values. That is removed. It was actively harmful:
+# leaving spi-nor bound starves the host of its own firmware (it powers on and
+# executes nothing — no POST codes, no IPMI), and the monitor could rewrite the
+# entire 32 MiB host BIOS unattended off a D-Bus power-state signal, on a BMC
+# that has crashed under heavy MTD I/O.
+#
+# Attribute values now come from the BIOS itself over IPMI: the host pushes its
+# registry and live varstore values via NetFn 0x30 (biosconfigcommands.cpp +
+# biosvarstore.cpp) and the BMC publishes them to BaseBIOSTable. The BIOS is the
+# authority on its own configuration; reading the flash behind its back was
+# always a workaround for that path not completing.
 asrockoemcmds_src = [
     'src/kcsmonitor.cpp',
     'src/biosconfigcommands.cpp',
     'src/biosvarstore.cpp',
     'src/redfishhicommands.cpp',
+    'src/amioemcommands.cpp',
 ]
-
-# -----------------------------------------------------------------------
-# asrock-bios-nvram — BIOS attribute values backed by the host BIOS flash
-# -----------------------------------------------------------------------
-# The values in the XML the BIOS pushes are its *defaults*, not the live
-# configuration (see src/biosnvram.hpp). This tool reads the real values out of
-# the AMI NVAR store in the BIOS SPI flash — which the BMC owns via the SPI mux
-# while the host is powered off — and publishes them to BaseBIOSTable, and folds
-# Redfish PendingAttributes back into a flash image for flashcp. Deliberately a
-# separate binary from the ipmid provider: it runs on host power transitions,
-# not on IPMI traffic, and it must never be loaded into ipmid's address space
-# just to touch a 32 MB file.
-executable(
-    'asrock-bios-nvram',
-    sources: ['src/biosnvram.cpp', 'src/biosnvramtool.cpp',
-              'src/biosvarstore.cpp'],
-    include_directories: include_directories('.'),
-    implicit_include_directories: false,
-    dependencies: [phosphor_logging_dep, sdbusplus_dep, tinyxml_dep],
-    install: true,
-    install_dir: get_option('libexecdir'),
-)
 
 library(
     'zasrockoemcmds',

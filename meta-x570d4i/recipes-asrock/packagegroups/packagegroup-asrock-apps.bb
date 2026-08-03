@@ -38,6 +38,7 @@ RDEPENDS:${PN}-system = " \
         smbios-mdr \
         phosphor-ipmi-blobs \
         biosconfig-manager \
+        asrock-ipmi-oem \
         dbus-sensors \
         usb-network \
         phosphor-misc-usb-ctrl \

@@ -38,3 +38,47 @@ remove_legacy_bios_update_script() {
     rmdir --ignore-fail-on-non-empty ${D}${sbindir}
 }
 do_install[postfuncs] += "remove_legacy_bios_update_script"
+
+# ---------------------------------------------------------------------------
+# Fix the startup coredump (2026-08-03)
+# ---------------------------------------------------------------------------
+# phosphor-bios-software-update queries the entity-manager SPIFlash config on
+# startup and throws an UNCAUGHT sdbusplus exception if it is not on D-Bus yet:
+#
+#   terminate called after throwing an instance of 'sdbusplus::exception::SdBusError'
+#     what():  xyz.openbmc_project.Common.Error.ResourceNotFound
+#   Process 319 (phosphor-bios-s) of user 0 dumped core.
+#   xyz.openbmc_project.Software.BIOS.service: Main process exited, code=dumped,
+#                                              status=6/ABRT
+#
+# systemd restarts it and the second attempt succeeds (NRestarts=1, then
+# Result=success), so the daemon does work -- but every boot leaves a core file
+# and a "dumped core" in the journal. Plain unit ordering does not fix it:
+# entity-manager reaches "started" well before it finishes publishing inventory
+# objects. So poll for the object in ExecStartPre instead.
+#
+# NOTE: the "Missing property Name/Polarity on ...MuxOutputs1" warnings are a
+# SEPARATE, harmless thing -- the daemon walks mux outputs and logs one past the
+# end. Our config declares a single MuxOutputs entry, which is correct.
+FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
+
+SRC_URI:append = " \
+    file://wait-for-spiflash-config.sh \
+    file://10-wait-for-config.conf \
+    "
+
+install_bios_update_startup_guard() {
+    install -d ${D}${libexecdir}
+    install -m 0755 ${UNPACKDIR}/wait-for-spiflash-config.sh \
+        ${D}${libexecdir}/wait-for-spiflash-config.sh
+
+    install -d ${D}${systemd_system_unitdir}/xyz.openbmc_project.Software.BIOS.service.d
+    install -m 0644 ${UNPACKDIR}/10-wait-for-config.conf \
+        ${D}${systemd_system_unitdir}/xyz.openbmc_project.Software.BIOS.service.d/10-wait-for-config.conf
+}
+do_install[postfuncs] += "install_bios_update_startup_guard"
+
+FILES:${PN}-bios-software-update:append = " \
+    ${libexecdir}/wait-for-spiflash-config.sh \
+    ${systemd_system_unitdir}/xyz.openbmc_project.Software.BIOS.service.d/10-wait-for-config.conf \
+    "

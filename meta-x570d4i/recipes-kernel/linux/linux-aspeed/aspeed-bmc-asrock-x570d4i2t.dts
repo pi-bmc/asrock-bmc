@@ -50,25 +50,13 @@
 	leds {
 		compatible = "gpio-leds";
 
-		/*
-		 * Legacy node-name LED labelling — matches the rest of the
-		 * ASRock OpenBMC family (ROMED8HM3, SPC621D8HM3, E3C246D4I,
-		 * E3C256D4I) and lets the shared phosphor-led-manager
-		 * led-group-config.json target these by name.
-		 */
-		/*
-		 * No linux,default-trigger here: phosphor-led-manager owns this
-		 * LED via the "bmc_booted" group in led-group-config.json, and a
-		 * kernel "timer" trigger would blink it at the driver default
-		 * until led-manager takes over and rewrites the sysfs trigger.
-		 */
 		heartbeat {
 			gpios = <&gpio ASPEED_GPIO(H, 6) GPIO_ACTIVE_LOW>;
-			/* linux,default-trigger = "timer"; */
+			linux,default-trigger = "timer";
 		};
 
 		system-fault {
-			gpios = <&gpio ASPEED_GPIO(Z, 2) GPIO_ACTIVE_LOW>;
+			gpios = <&gpio ASPEED_GPIO(Z, 2) GPIO_ACTIVE_HIGH>;
 			panic-indicator;
 		};
 	};
@@ -121,22 +109,6 @@
 		 "input-cpu1-prochot-n", "", "", "", "", "",
 	/* AB */ "", "input-power-good", "", "", "", "", "", "",
 	/* AC */ "", "", "", "", "", "", "", "";
-
-	/*
-	 * Drive GPIOE4 high as a "BMC ready" flag for the host BIOS Redfish Host
-	 * Interface. RedfishHi (DXE) probes the AST2500 Super-I/O at host I/O
-	 * 0x4E/0x4F, selects logical device 0x0D (the iLPC2AHB bridge) and reads
-	 * AHB 0x1E780020 (GPIO E/F/G/H data) bit4 = GPIOE4; if it is not 1 it
-	 * aborts before bringing up Redfish-over-USB on usb0. The Super-I/O decode
-	 * + iLPC2AHB bridge are kept enabled by the u-boot change
-	 * (CONFIG_ASPEED_ENABLE_SUPERIO + the isolate_bmc HICRB patch).
-	 */
-	redfish-hi-ready-hog {
-		gpio-hog;
-		gpios = <ASPEED_GPIO(E, 4) GPIO_ACTIVE_HIGH>;
-		output-high;
-		line-name = "output-redfish-hi-ready";
-	};
 };
 
 &fmc {
@@ -389,30 +361,8 @@
 };
 
 &gfx {
-	/*
-	 * The AST2500 "SOC display controller" (CRT1) is the *BMC's own*
-	 * display. This board has no local console (stdout-path = &uart5) and
-	 * the KVM captures the HOST VGA controller, so there is nothing for it
-	 * to do here. Disabled to match the other ASRock x86 AST2500 boards
-	 * in-tree (e3c246d4i, e3c256d4i, romed8hm3, spc621d8hm3).
-	 *
-	 * This node is a known red herring — do not "fix" the KVM here. If it
-	 * probes (which needs a memory-region; without one aspeed_gfx_load()
-	 * bails at of_reserved_mem_device_init() with -ENODEV, which is why the
-	 * sibling x570d4u's bare `status = "okay"` is inert), the fbdev initial
-	 * modeset hands the display DAC to CRT1 via SCU2C[16] and scans out a
-	 * black buffer at drm_add_modes_noedid()'s only mode, 800x600. That
-	 * matches this board's black-800x600 KVM symptom exactly and is still
-	 * NOT the cause: unbinding aspeed_gfx live clears SCU2C[16] and the
-	 * capture kept locking 800x600, and content written to /dev/fb0 never
-	 * reached the KVM. The video engine taps pre-mux, so the black 800x600
-	 * is genuinely the host's — the ASPEED GOP never runs (SCU50/54/58 all
-	 * zero), which is a host-firmware problem.
-	 *
-	 * gfx_memory is left declared (as upstream does) but unreferenced; it
-	 * is a `reusable` shared-dma-pool, so the page allocator still uses it.
-	 */
-	status = "disabled";
+	status = "okay";
+    memory-region = <&gfx_memory>;
 };
 
 &vhub {

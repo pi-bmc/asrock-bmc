@@ -1,14 +1,61 @@
 [Unit]
-Description=USB Ethernet gadget device
-After=multi-user.target
-StartLimitIntervalSec=20
-StartLimitBurst=3
+Description=USB Ethernet gadget (Redfish Host Interface)
+
+# ---------------------------------------------------------------------------
+# Ordering: the gadget MUST exist before the host powers on (2026-08-03)
+# ---------------------------------------------------------------------------
+# This unit used to be "After=multi-user.target", which placed it dead last in
+# boot. Measured on hardware, that produced:
+#
+#     [  47.6] Reached target Basic System
+#     [  72.9] power-control[209]: Host0: Moving to "On" state
+#     [ 168.1] Reached target Multi-User System
+#     [ 168.3] Started USB Ethernet gadget device        <-- usb0 first exists
+#     [ 170.3] usb0: Configuring with 00-bmc-usb0.network
+#
+# The host began POST 95 seconds before usb0 existed. Its RedfishHi driver
+# enumerates USB and issues "Get LAN Configuration Parameters, channel 8" long
+# before that point, and ipmid resolves channel 8 -> usb0 through the
+# ObjectMapper at CALL time (transporthandler.cpp maybeGetChannelParams). With
+# no interface that returns nullopt, getChannelParams throws InternalFailure,
+# and the BIOS gets completion code 0xFF. From the host's point of view the
+# gadget was simply not plugged in yet -- which is also why usb0 never saw a
+# single received packet and NetFn 0x30 was never reached.
+#
+# So run in the sysinit phase instead. Everything required is built into the
+# kernel -- aspeed_vhub probes at t=22.2s, and configfs, libcomposite and
+# usb_f_rndis are all builtin, so there is no module load to wait for. Starting
+# here puts usb0 up at roughly t=24s: ~49s before the host powers on, and early
+# enough that phosphor-network's startup enumeration finds the interface
+# directly instead of racing an rtnetlink hotplug event.
+DefaultDependencies=no
+Wants=sys-kernel-config.mount
+After=sysinit.target sys-kernel-config.mount
+Before=basic.target shutdown.target
+Conflicts=shutdown.target
+
+# Redundant with Before=basic.target (both consumers take the default
+# dependencies, so both are already ordered After=basic.target), but these are
+# the two units that actually matter, and naming them keeps the intent from
+# being lost if the ordering above is ever revisited.
+Before=xyz.openbmc_project.Network.service phosphor-ipmi-host.service
 
 [Service]
+# Type=simple marked this unit "started" the moment the shell forked, so any
+# Before=/After= against it guaranteed nothing at all. oneshot +
+# RemainAfterExit makes the ordering above mean what it says: the script does
+# not return until the usb0 netdev is actually registered.
+Type=oneshot
+RemainAfterExit=yes
 ExecStart=/usr/sbin/usb_network.sh
-Restart=on-failure
-RestartMode=direct
-RestartSec=5
+
+# Hard bound, because this now sits in front of basic.target. Before= is pure
+# ordering rather than a requirement, so if the gadget wedges systemd kills the
+# script and the boot continues without a host interface -- degraded, but never
+# hung. Deliberately no Restart=: the script already retries internally by
+# polling for the UDC and for the netdev, and looping a boot-blocking oneshot
+# would only multiply the worst-case stall.
+TimeoutStartSec=45
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=basic.target
