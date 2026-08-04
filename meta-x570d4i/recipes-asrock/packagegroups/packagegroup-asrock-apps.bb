@@ -32,6 +32,7 @@ SUMMARY:${PN}-system = "ASRock System"
 # machine is x86-power-control and its PSU telemetry is supermicro-psu-monitor.
 RDEPENDS:${PN}-system = " \
         entity-manager \
+        virtual-media \
         supermicro-psu-monitor \
         phosphor-software-manager \
         phosphor-software-manager-bios-software-update \

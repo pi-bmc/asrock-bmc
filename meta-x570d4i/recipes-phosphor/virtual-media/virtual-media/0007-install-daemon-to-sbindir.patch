@@ -1,0 +1,37 @@
+From: ASRock Rack X570D4I-2T OpenBMC port
+Subject: [PATCH] install the daemon where its own service file looks for it
+Upstream-Status: Pending
+
+meson installs virtual-media to bindir, while
+xyz.openbmc_project.VirtualMedia.service in the same tree says
+ExecStart=/usr/sbin/virtual-media. Nothing catches the contradiction at build
+time; it surfaces only on the target as the unit failing with status=203/EXEC.
+
+sbindir is the correct location for a system daemon with no user-facing CLI,
+so move the install there rather than editing the unit. Fixing it here rather
+than relocating the file from the packaging recipe keeps it fixed for every
+consumer, and avoids a do_install mv that would silently leave any future
+bindir binary unpackaged.
+
+diff --git a/meson.build b/meson.build
+index a88482b..36767c5 100644
+--- a/meson.build
++++ b/meson.build
+@@ -201,7 +201,7 @@ srcfiles_app = [ 'src/main.cpp',
+                  'src/state/activating_state.cpp',
+                ]
+ 
+-bindir = get_option('prefix') + '/' +get_option('bindir')
++sbindir = get_option('prefix') + '/' +get_option('sbindir')
+ 
+ if get_option('legacy-mode').enabled()
+   add_project_arguments(
+@@ -217,7 +217,7 @@ executable('virtual-media',
+            ],
+            include_directories: incdir,
+            install: true,
+-           install_dir:bindir)
++           install_dir:sbindir)
+ 
+ #Tests are placed in the tests folder, with it's own meson.build
+ if (get_option('tests').enabled())

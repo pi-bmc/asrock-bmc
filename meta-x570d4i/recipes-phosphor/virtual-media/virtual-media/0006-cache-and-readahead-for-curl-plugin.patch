@@ -1,0 +1,70 @@
+From: ASRock Rack X570D4I-2T OpenBMC port
+Subject: [PATCH] read ahead and cache in front of the curl plugin
+Upstream-Status: Pending
+
+Un-filtered, every read the host issues through a Legacy (https://) mount
+becomes its own HTTP range request over TLS. A BIOS enumerating and then
+booting a device issues a great many small reads, so this is worth fixing on
+its own merits: the two filters turn a sequential scan of an immutable image
+into a handful of large fetches.
+
+Filter order is load-bearing and reads backwards. nbdkit applies filters
+client-first, so the leftmost sits on top; readahead must therefore be named
+BEFORE cache to end up above it. readahead only does anything when the layer
+below it reports NBDKIT_CACHE_NATIVE, and the curl plugin implements neither
+.cache nor .can_cache -- so with the order reversed it logs "underlying plugin
+does not support NBD_CMD_CACHE ... so the filter won't do anything" and
+short-circuits, leaving every cache miss a serialised TLS round trip. Both man
+pages document the correct order.
+
+cache-on-read is needed because the mount is read-only and the cache filter
+otherwise caches only writes. cache-max-size is deliberately small: the cache
+is a temp file in $TMPDIR, which is tmpfs on this board, so it is unswappable
+RAM on a 512 MiB BMC and is charged once per concurrent Legacy mount (two are
+configured). With readahead correctly on top, the cache only has to hold the
+prefetch window plus re-read of filesystem metadata.
+
+NOT a fix for the POST instability seen on this board. With virtual media
+attached the host intermittently loops between POST 0x60 and 0x77 and never
+completes -- but that also happens with plain tmpfs-backed gadgets, and with
+no gadget attached at all, so it is not caused by the latency this patch
+addresses and this patch should not be credited with fixing it.
+
+diff --git a/src/state/activating_state.cpp b/src/state/activating_state.cpp
+index deb625f..0efbb27 100644
+--- a/src/state/activating_state.cpp
++++ b/src/state/activating_state.cpp
+@@ -263,6 +263,18 @@ std::unique_ptr<resource::Process>
+ {
+     std::unique_ptr<utils::VolatileFile> secret;
+     std::vector<std::string> params = {
++        // Read ahead, then cache, in front of the plugin. Order matters and is
++        // the opposite of what it looks like: nbdkit applies filters
++        // client-first, so readahead must be named first to sit ON TOP of
++        // cache. readahead only works when the layer below reports
++        // NBDKIT_CACHE_NATIVE, which the curl plugin does not -- put it
++        // underneath and it logs "won't do anything" and short-circuits.
++        //
++        // Without them every block the host reads is its own HTTP range
++        // request over TLS. Reads are sequential and the image is immutable
++        // for the life of the mount, so this is safe and very effective.
++        "--filter=readahead",
++        "--filter=cache",
+         // Use curl plugin ...
+         "curl",
+         // ... to mount http resource at url
+@@ -274,7 +286,13 @@ std::unique_ptr<resource::Process>
+         "ECDHE-RSA-AES256-GCM-SHA384:"
+         "ECDHE-ECDSA-AES256-GCM-SHA384",
+         "tls13-ciphers="
+-        "TLS_AES_256_GCM_SHA384"};
++        "TLS_AES_256_GCM_SHA384",
++        // cache-on-read because the mount is read-only and the cache filter
++        // otherwise caches only writes. The cache lives in $TMPDIR, which is
++        // tmpfs here, so cache-max-size is unswappable RAM on a 512 MiB BMC
++        // and is charged once per concurrent Legacy mount -- keep it small;
++        // readahead above only needs room for its prefetch window.
++        "cache-on-read=true", "cache-max-size=16M"};
+ 
+     // Authenticate if needed.
+     //

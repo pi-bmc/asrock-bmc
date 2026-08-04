@@ -1,0 +1,55 @@
+From: ASRock Rack X570D4I-2T OpenBMC port
+Subject: [PATCH] chassis: keep a persistent boot override when the BIOS clears it
+Upstream-Status: Inappropriate [workaround for AMI BIOS behaviour]
+
+This board's AMI BIOS unconditionally writes Set System Boot Options
+parameter 5 with an all-zero payload once it has consumed the boot flags,
+whether or not the persistent bit was set. Handled literally that means
+validFlag=0 and permanent=0, so the handler calls setBootOneTime(true),
+setBootEnable(false) and setBootSource(Default) -- and a Redfish
+BootSourceOverrideEnabled=Continuous is gone after one boot.
+
+The failure is quiet and confusing rather than obvious, because the host
+keeps its own copy: with the BMC state wiped the machine went on booting into
+Setup on the second boot while Redfish reported None/Disabled. It also resets
+BootType to Legacy, so the *next* override inherits Legacy and requests a
+legacy PXE that has no boot entry on a UEFI-only boot order.
+
+IPMI 28.13 makes the BMC responsible for the lifetime of these flags: the
+valid bit is cleared after the next boot only when the flags are not
+persistent. Retiring a persistent override is therefore the BMC's job, and a
+clear arriving while the configured override is persistent is a request to
+decline. Only the exact clear shape is ignored, and only while the override
+is persistent, so one-time overrides and genuine host-initiated changes
+behave exactly as before.
+
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -2253,6 +2253,27 @@
+         using namespace chassis::internal;
+         using namespace chassis::internal::cache;
+ 
++        // The AMI BIOS on this board clears parameter 5 after consuming it,
++        // even for a persistent override. Taking that literally would undo a
++        // Continuous BootSourceOverride after its first boot -- observed
++        // directly: the settings object came back BootMode=Regular,
++        // BootSource=Default, BootType=Legacy, Enabled=false, so Redfish then
++        // reported no override while the host went on honouring one.
++        // Retiring persistent flags is the BMC's job under IPMI 28.13, so
++        // decline the clear -- but only the clear, and only while the
++        // configured override actually is persistent. A one-time override's
++        // clear, and any genuine host-initiated change, are unaffected.
++        if (!validFlag && !permanent)
++        {
++            bool oneTimeEnabled = true;
++            if (getBootOneTime(ctx, oneTimeEnabled) == ipmi::ccSuccess &&
++                !oneTimeEnabled)
++            {
++                lg2::info("Ignoring host clear of persistent boot flags");
++                return ipmi::responseSuccess();
++            }
++        }
++
+         try
+         {
+             rc = setBootOneTime(ctx, !permanent);

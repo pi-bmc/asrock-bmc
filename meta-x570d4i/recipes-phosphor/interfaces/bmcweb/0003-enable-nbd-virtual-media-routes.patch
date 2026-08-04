@@ -1,0 +1,32 @@
+From: ASRock Rack X570D4I-2T OpenBMC port
+Subject: [PATCH] config: build the NBD virtual-media Redfish routes
+Upstream-Status: Pending
+
+bmcweb ships a complete Redfish VirtualMedia client in
+redfish-core/lib/virtual_media.hpp, but upstream compiles it out
+unconditionally: the meson option was commented out of meson.options and the
+constant hardcoded to false, on the grounds that no daemon implementing
+xyz.openbmc_project.VirtualMedia was ever upstreamed.
+
+One does exist -- Intel-BMC/virtual-media -- and this layer packages it, so
+the routes have a backend to talk to. Flip the constant rather than
+resurrecting the meson option, so there is exactly one place to look and no
+build configuration that can silently disagree with the recipe.
+
+Without this, /redfish/v1/Managers/bmc/VirtualMedia returns 404 and the
+Manager resource omits the VirtualMedia link entirely, which reads like the
+daemon is missing rather than like the route was compiled out.
+
+--- a/config/meson.build
++++ b/config/meson.build
+@@ -108,8 +108,8 @@
+ loglvlopt = loglvlopt.to_upper()
+ string_options_string += 'constexpr std::string_view  BMCWEB_LOGGING_LEVEL' + ' = "' + loglvlopt + '";\n'
+ 
+-# NBD proxy is disabled due to lack of maintenance.  See meson_options.txt
+-feature_options_string += 'constexpr const bool BMCWEB_VM_NBDPROXY = false;\n'
++# Re-enabled for this board: Intel-BMC/virtual-media provides the backend.
++feature_options_string += 'constexpr const bool BMCWEB_VM_NBDPROXY = true;\n'
+ 
+ conf_data.set(
+     'BMCWEB_OPTIONS',

@@ -1,0 +1,61 @@
+From: ASRock Rack X570D4I-2T OpenBMC port
+Subject: [PATCH] Legacy Mount: take a bare unix_fd, matching current bmcweb
+Upstream-Status: Pending
+
+bmcweb changed this method's prototype in commit 4bbf2a13c2 ("Virtual media
+should always create pipe", Feb 2025), which now always creates the
+credentials pipe and sends a bare sdbusplus::message::unix_fd -- signature
+"sbh". Its commit message is explicit that this breaks downstream:
+
+    This will break some folks downstream code, because we're changing the
+    prototype here of the method call.  I try to avoid that where we can,
+    but this interface isn't really viable as it is.
+
+This daemon still registers Mount as "sbv", taking std::variant<int, unix_fd>.
+sd-bus rejects the signature mismatch before the handler runs, so the only
+symptom is an InsertMedia that returns "internal service error" with
+`Bad D-Bus request error: Invalid argument [generic:22]` in the bmcweb log and
+*nothing at all* in the virtual-media log -- the call never arrives.
+
+Take the fd directly. Note this is the daemon catching up to a moved contract,
+not a workaround for a buggy client: no released bmcweb ever sent the
+variant's int arm (before 4bbf2a13c2 it sent a single-alternative
+variant<unix_fd> that always held an fd), so the int arm was unreachable in
+practice. sdbusplus cannot register two signatures under one method name, so
+the daemon must pick one, and the one its only client sends is the right pick.
+
+The design document in this recipe directory still describes the
+VARIANT<UNIX_FD,INT> form; see the note added at the top of it.
+
+diff --git a/src/state/initial_state.hpp b/src/state/initial_state.hpp
+index f9255b0..187cec6 100644
+--- a/src/state/initial_state.hpp
++++ b/src/state/initial_state.hpp
+@@ -223,25 +223,21 @@ struct InitialState : public BasicStateT<InitialState>
+         if (isLegacy)
+         {
+             using sdbusplus::message::unix_fd;
+-            using optional_fd = std::variant<int, unix_fd>;
+ 
+             iface->register_method(
+                 "Mount", [&machine = machine](boost::asio::yield_context yield,
+                                               std::string imgUrl, bool rw,
+-                                              optional_fd fd) {
++                                              unix_fd fd) {
+                     LogMsg(Logger::Info, "[App]: Mount called on ",
+                            getObjectPath(machine), machine.getName());
+ 
+                     interfaces::MountPointStateMachine::Target target = {
+                         imgUrl, rw, nullptr, nullptr};
+ 
+-                    if (std::holds_alternative<unix_fd>(fd))
+                     {
+-                        LogMsg(Logger::Debug, "[App] Extra data available");
+-
+                         // Open pipe and prepare output buffer
+                         boost::asio::posix::stream_descriptor secretPipe(
+-                            machine.getIoc(), dup(std::get<unix_fd>(fd).fd));
++                            machine.getIoc(), dup(fd.fd));
+                         std::array<char, utils::secretLimit> buf;
+ 
+                         // Read data

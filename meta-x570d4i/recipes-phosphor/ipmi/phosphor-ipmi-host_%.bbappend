@@ -9,6 +9,10 @@ PACKAGECONFIG:append = " dynamic-sensors"
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 SRC_URI:append = " file://ipmi-channel-access-volatile.conf"
 
+# Keep a Continuous BootSourceOverride alive across the BIOS's param-5 clear;
+# see the patch header for why the BMC is the right place to decline it.
+SRC_URI:append = " file://0001-chassis-keep-persistent-boot-override-on-BIOS-clear.patch"
+
 do_install:append() {
     install -d ${D}${sysconfdir}/tmpfiles.d
     install -m 0644 ${UNPACKDIR}/ipmi-channel-access-volatile.conf \

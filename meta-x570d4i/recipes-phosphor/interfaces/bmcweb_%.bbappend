@@ -20,12 +20,20 @@
 #          set extracted from the stock BIOS binaries — see
 #          asrock-bmc/.claude/rhi-http-contract.md.
 #
+#   0003 — Redfish VirtualMedia. Upstream compiles these routes out because no
+#          daemon implementing xyz.openbmc_project.VirtualMedia was ever
+#          upstreamed; this layer packages Intel-BMC/virtual-media, so they now
+#          have a backend. Needed to exercise the Cd and Usb boot-source
+#          overrides at all — with no media attached the BIOS builds no CD or
+#          removable boot entry and the override falls through to NVMe.
+#
 # SMBIOS still arrives over IPMI (blob handler; see smbios-mdr_%.bbappend).
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 SRC_URI += " \
     file://0001-redfish-bios-attributes-from-basebiostable.patch \
     file://0002-redfish-ami-host-interface-routes.patch \
+    file://0003-enable-nbd-virtual-media-routes.patch \
     "
 
 # Disable bmcweb's zstd HTTP compression.
@@ -44,6 +52,15 @@ SRC_URI += " \
 # be reverted.
 
 PACKAGECONFIG:remove = "http-zstd"
+
+# vm-websocket and vm-nbdproxy are two implementations of the same /nbd/<id>
+# websocket and bmcweb static_asserts if both are on. vm-websocket shells out
+# to jsnbd's nbd-proxy and only serves browser-side (proxy mode) mounts;
+# vm-nbdproxy drives xyz.openbmc_project.VirtualMedia over D-Bus, which is
+# what carries the Redfish VirtualMedia resource and its InsertMedia action.
+# Legacy mounts -- the BMC pulling an image from a URL -- only exist on the
+# latter, so that is the one to keep. See patch 0003.
+PACKAGECONFIG:remove = "vm-websocket"
 
 # Default 30 MB upstream HTTP body limit is too small for our 64 MB BMC image
 # tarball uploaded via Redfish UpdateService HttpPushUri / MultipartHttpPushUri.

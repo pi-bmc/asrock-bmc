@@ -1,0 +1,108 @@
+From: ASRock Rack X570D4I-2T OpenBMC port
+Subject: [PATCH] allow a mount point to present as a CD/DVD
+Upstream-Status: Pending
+
+lun.0/cdrom was hardcoded to "0", so every attached image enumerated as a
+removable disk regardless of content. That makes the Redfish Cd boot override
+unusable: the host BIOS classifies a boot entry from the device's SCSI
+peripheral type, and IPMI boot device 0x05 (Force boot from default CD/DVD)
+only resolves against an entry classified as CD/DVD. An ISO attached to a
+cdrom=0 gadget is indistinguishable from a USB stick, so the override falls
+through to the next device -- which looks exactly like it being ignored.
+
+Add an optional per-mount-point "Cdrom" boolean and thread it to the gadget.
+It defaults to false, so existing configurations are unaffected. DMTF models
+MediaTypes as a property of the VirtualMedia resource rather than of the
+inserted image, so a per-slot setting is the schema-correct shape; it also
+avoids having to inspect image content over a possibly-remote nbd device
+before the gadget can be configured.
+
+The shipped virtual-media.json opts Slot_2 in, so the board has one CD-class
+and one removable-class slot. Setting it here rather than shipping a near-copy
+of this file from the layer keeps the two from drifting apart on an uprev.
+
+diff --git a/src/configuration.hpp b/src/configuration.hpp
+index efdddf2..9e37218 100644
+--- a/src/configuration.hpp
++++ b/src/configuration.hpp
+@@ -42,6 +42,11 @@ class Configuration
+         std::optional<int> blocksize;
+         std::chrono::seconds remainingInactivityTimeout;
+         Mode mode;
++        // Present the gadget as a CD/DVD rather than a removable disk. The host
++        // BIOS classifies a boot entry from the device's SCSI peripheral type,
++        // so IPMI boot device 0x05 only resolves against a device reporting as
++        // one; with cdrom=0 an attached ISO is just another removable disk.
++        bool cdrom = false;
+ 
+         static std::vector<std::string> toArgs(const MountPoint& mp)
+         {
+@@ -207,6 +212,7 @@ class Configuration
+                                    "BlockSize not set, use default");
+                         }
+                     }
++                    mp.cdrom = mountpoint.value().value("Cdrom", false);
+                     const auto modeIter = mountpoint.value().find("Mode");
+                     if (modeIter != mountpoint.value().cend())
+                     {
+diff --git a/src/resources.cpp b/src/resources.cpp
+index a501bba..57feaec 100644
+--- a/src/resources.cpp
++++ b/src/resources.cpp
+@@ -23,7 +23,8 @@ Gadget::Gadget(interfaces::MountPointStateMachine& machine,
+ {
+     status = UsbGadget::configure(
+         std::string(machine.getName()), machine.getConfig().nbdDevice, devState,
+-        machine.getTarget() ? machine.getTarget()->rw : false);
++        machine.getTarget() ? machine.getTarget()->rw : false,
++        machine.getConfig().cdrom);
+ }
+ 
+ Gadget::~Gadget()
+diff --git a/src/system.hpp b/src/system.hpp
+index 3e23ae3..6ee2b18 100644
+--- a/src/system.hpp
++++ b/src/system.hpp
+@@ -504,13 +504,15 @@ struct UsbGadget : private FsHelper
+ 
+   public:
+     static int32_t configure(const std::string& name, const NBDDevice& nbd,
+-                             StateChange change, const bool rw = false)
++                             StateChange change, const bool rw = false,
++                             const bool cdrom = false)
+     {
+-        return configure(name, nbd.to_path(), change, rw);
++        return configure(name, nbd.to_path(), change, rw, cdrom);
+     }
+ 
+     static int32_t configure(const std::string& name, const fs::path& path,
+-                             StateChange change, const bool rw = false)
++                             StateChange change, const bool rw = false,
++                             const bool cdrom = false)
+     {
+         LogMsg(Logger::Info, "[App]: Configure USB Gadget (name=", name,
+                ", path=", path, ", State=", static_cast<uint32_t>(change), ")");
+@@ -549,7 +551,8 @@ struct UsbGadget : private FsHelper
+                                              massStorageDir);
+                 echoToFile(funcMassStorageDir / "lun.0/removable", "1");
+                 echoToFile(funcMassStorageDir / "lun.0/ro", rw ? "0" : "1");
+-                echoToFile(funcMassStorageDir / "lun.0/cdrom", "0");
++                echoToFile(funcMassStorageDir / "lun.0/cdrom",
++                           cdrom ? "1" : "0");
+                 echoToFile(funcMassStorageDir / "lun.0/file", path);
+ 
+                 for (const auto& port : fs::directory_iterator(
+diff --git a/virtual-media.json b/virtual-media.json
+index 688b74a..cb3e721 100644
+--- a/virtual-media.json
++++ b/virtual-media.json
+@@ -23,7 +23,8 @@
+             "NBDDevice": "nbd2",
+             "UnixSocket": "/run/virtual-media/nbd2.sock",
+             "Timeout": 90,
+-            "BlockSize": 512
++            "BlockSize": 512,
++            "Cdrom": true
+         },
+         "Slot_3": {
+             "EndpointId": "",

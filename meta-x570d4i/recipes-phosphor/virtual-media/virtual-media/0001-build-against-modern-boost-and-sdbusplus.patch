@@ -1,0 +1,166 @@
+From: ASRock Rack X570D4I-2T OpenBMC port
+Subject: [PATCH] build against Boost 1.90 / sdbusplus C++23
+Upstream-Status: Pending
+
+This tree was last touched in 2023 and does not compile against the current
+OpenBMC toolchain:
+
+  * Boost 1.86 moved the original Boost.Process API under boost/process/v1/
+    and 1.90 dropped the compatibility headers, so every translation unit
+    touching it failed with "No such file or directory".
+  * basic_waitable_timer::expires_from_now was removed in Boost 1.87;
+    expires_after is the direct replacement for a relative duration.
+  * sdbusplus/asio/connection.hpp now uses std::move_only_function, which is
+    C++23.
+
+Three fixes belong in meson.build rather than in the recipe, because they are
+properties of the source, not of how this distro packages boost:
+
+  * BOOST_PROCESS_VERSION=1 joins the other BOOST_* defines. Without it the v1
+    headers resolve but "BOOST_PROCESS_V1_INLINE namespace v1" is not an inline
+    namespace, so no unqualified boost::process:: name does.
+  * 'context' joins the boost modules list. boost::asio::spawn is implemented
+    on Boost.Context fibers and the link fails on ontop_fcontext without it;
+    naming the module keeps meson's sysroot and version resolution rather than
+    forcing a bare -l from the recipe.
+  * the cpp_std guard is removed rather than retargeted to c++23. It exists
+    only to reject any standard but the one hardcoded above it, which is what
+    stopped the standard being raised from the recipe in the first place;
+    retargeting it re-arms the same trap at the next bump.
+
+diff --git a/meson.build b/meson.build
+index ad24d31..a88482b 100644
+--- a/meson.build
++++ b/meson.build
+@@ -4,17 +4,13 @@ project(
+     default_options: [
+         'warning_level=3',
+         'werror=true',
+-        'cpp_std=c++20',
++        'cpp_std=c++23',
+         'cpp_rtti=false',
+     ],
+     license: 'Apache-2.0',
+     version: '0.1',
+ )
+ 
+-if get_option('cpp_std') != 'c++20'
+-    error('This project requires c++20 support')
+-endif
+-
+ cxx = meson.get_compiler('cpp')
+ 
+ build = get_option('buildtype')
+@@ -158,7 +154,7 @@ if not sdbusplus.found()
+ endif
+ 
+ boost = dependency('boost',
+-                   modules: ['coroutine', 'iostreams', 'filesystem',
++                   modules: ['context', 'coroutine', 'iostreams', 'filesystem',
+ 			     'program_options', 'regex', 'system'],
+                    version: '>=1.77',
+                    fallback : ['boost', 'boost_dep'],
+@@ -168,6 +164,7 @@ boost = dependency('boost',
+ 
+ add_project_arguments(
+ cxx.get_supported_arguments([
++'-DBOOST_PROCESS_VERSION=1',
+ '-DBOOST_ASIO_USE_TS_EXECUTOR_AS_DEFAULT',
+ '-DBOOST_ASIO_DISABLE_THREADS',
+ '-DBOOST_NO_RTTI',
+diff --git a/src/main.cpp b/src/main.cpp
+index a20c68a..f82dd8f 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -13,7 +13,7 @@
+ #include <boost/asio/spawn.hpp>
+ #include <boost/container/flat_map.hpp>
+ #include <boost/container/flat_set.hpp>
+-#include <boost/process.hpp>
++#include <boost/process/v1.hpp>
+ #include <filesystem>
+ #include <iostream>
+ #include <memory>
+diff --git a/src/state/activating_state.cpp b/src/state/activating_state.cpp
+index 7143545..c495653 100644
+--- a/src/state/activating_state.cpp
++++ b/src/state/activating_state.cpp
+@@ -10,7 +10,7 @@
+ #include <boost/asio/spawn.hpp>
+ #include <boost/container/flat_map.hpp>
+ #include <boost/container/flat_set.hpp>
+-#include <boost/process.hpp>
++#include <boost/process/v1.hpp>
+ #include <boost/system/detail/error_code.hpp>
+ #include <filesystem>
+ #include <iostream>
+diff --git a/src/state/active_state.hpp b/src/state/active_state.hpp
+index beb1da1..5d9a1a8 100644
+--- a/src/state/active_state.hpp
++++ b/src/state/active_state.hpp
+@@ -57,10 +57,10 @@ struct ActiveState : public BasicStateT<ActiveState>
+                     Configuration::inactivityTimeout - timeSinceLastAccess;
+             }
+ 
+-            timer.expires_from_now(std::chrono::seconds(1));
++            timer.expires_after(std::chrono::seconds(1));
+             timer.async_wait(handler);
+         };
+-        timer.expires_from_now(std::chrono::seconds(1));
++        timer.expires_after(std::chrono::seconds(1));
+         timer.async_wait(handler);
+ 
+         return nullptr;
+diff --git a/src/system.hpp b/src/system.hpp
+index d0af549..3e23ae3 100644
+--- a/src/system.hpp
++++ b/src/system.hpp
+@@ -6,7 +6,7 @@
+ #include <boost/asio.hpp>
+ #include <boost/asio/spawn.hpp>
+ #include <boost/container/flat_map.hpp>
+-#include <boost/process.hpp>
++#include <boost/process/v1.hpp>
+ #include <filesystem>
+ #include <fstream>
+ #include <sdbusplus/asio/object_server.hpp>
+@@ -415,7 +415,7 @@ class Process : public std::enable_shared_from_this<Process>
+             while (child.running() && waitCnt > 0)
+             {
+                 boost::system::error_code ignored_ec;
+-                timer.expires_from_now(std::chrono::milliseconds(100));
++                timer.expires_after(std::chrono::milliseconds(100));
+                 timer.async_wait(yield[ignored_ec]);
+                 waitCnt--;
+             }
+@@ -449,7 +449,7 @@ class Process : public std::enable_shared_from_this<Process>
+             while (child.running() && waitCnt > 0)
+             {
+                 boost::system::error_code ignored_ec;
+-                timer.expires_from_now(std::chrono::milliseconds(100));
++                timer.expires_after(std::chrono::milliseconds(100));
+                 timer.async_wait(yield[ignored_ec]);
+                 waitCnt--;
+             }
+diff --git a/src/utils.hpp b/src/utils.hpp
+index 1c03aa0..1d4435b 100644
+--- a/src/utils.hpp
++++ b/src/utils.hpp
+@@ -6,7 +6,7 @@
+ 
+ #include <algorithm>
+ #include <boost/asio/steady_timer.hpp>
+-#include <boost/process/async_pipe.hpp>
++#include <boost/process/v1/async_pipe.hpp>
+ #include <boost/type_traits/has_dereference.hpp>
+ #include <filesystem>
+ #include <fstream>
+@@ -334,7 +334,7 @@ class NotificationWrapper
+     {
+         LogMsg(Logger::Debug, "Notification initiated");
+         started = true;
+-        timer->expires_from_now(duration);
++        timer->expires_after(duration);
+         timer->async_wait([this, handler{std::move(handler)}](
+                               const boost::system::error_code& ec) {
+             started = false;

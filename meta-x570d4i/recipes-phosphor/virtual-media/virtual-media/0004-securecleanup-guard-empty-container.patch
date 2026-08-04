@@ -1,0 +1,40 @@
+From: ASRock Rack X570D4I-2T OpenBMC port
+Subject: [PATCH] secureCleanup: do not index an empty container
+Upstream-Status: Pending
+
+secureCleanup takes the address of element 0 to hand to explicit_bzero. On an
+empty container that is out of bounds, and OpenBMC compiles with
+-D_GLIBCXX_ASSERTIONS=1, so libstdc++'s hardened operator[] aborts:
+
+  stl_vector.h:1253: ... reference std::vector<...>::operator[](size_type)
+  [with _Tp = char]: Assertion '__n < this->size()' failed.
+
+It is reached whenever a mount carries a password that is the empty string:
+the password is packed into a std::vector<char>, which is therefore empty, and
+SecureBuffer's deleter runs secureCleanup over it. The daemon dies with
+SIGABRT partway through InsertMedia -- inside the VolatileFile constructor,
+which is why the failure can also surface as nbdkit reporting a missing
+password file.
+
+Use data() and return early when there is nothing to scrub. data() is
+well-defined on an empty container, and skipping the call avoids passing a
+possibly-null pointer to explicit_bzero. Zero bytes of secret still get
+zeroed, which is all that was being asked for.
+
+diff --git a/src/utils.hpp b/src/utils.hpp
+index 1d4435b..dd36fe4 100644
+--- a/src/utils.hpp
++++ b/src/utils.hpp
+@@ -26,7 +26,11 @@ constexpr const size_t secretLimit = 1024;
+ template <typename T>
+ static void secureCleanup(T& value)
+ {
+-    auto raw = const_cast<typename T::value_type*>(&value[0]);
++    if (value.empty())
++    {
++        return;
++    }
++    auto raw = const_cast<typename T::value_type*>(value.data());
+     explicit_bzero(raw, value.size() * sizeof(*raw));
+ }
+ 
