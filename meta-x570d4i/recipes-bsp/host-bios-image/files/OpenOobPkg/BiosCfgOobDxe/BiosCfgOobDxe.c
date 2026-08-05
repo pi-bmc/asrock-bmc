@@ -84,6 +84,7 @@
 #include <Guid/EventGroup.h>
 
 #include <Library/IpmiKcsLib.h>
+#include <Library/OobIntelOemLib.h>
 #include <Library/OobTelemetryLib.h>
 #include "BiosCfgOobVarstores.h"
 #include "BiosCfgOobSchema.h"
@@ -786,6 +787,59 @@ ApplyPending (
   return TRUE;
 }
 
+/* ── failure reporting ────────────────────────────────────────────────────── */
+
+/* Reason codes carried in event data 2. Local to this driver; they exist so a
+   SEL entry says which step failed, not merely that something did. */
+#define OOB_FAIL_SCHEMA_XFER    0x01u
+#define OOB_FAIL_SNAPSHOT_BUILD 0x02u
+#define OOB_FAIL_SNAPSHOT_XFER  0x03u
+
+/* IPMI v2.0 Table 42, sensor type 0Fh "System Firmware Progress"; offset 00h is
+   System Firmware Error. Event data 1 bits 5:4 = 10b declares an OEM code in
+   event data 2, which is where the reason above goes. Assertion, sensor-specific
+   (6Fh) reading type.
+
+   Sensor number 00h: this board publishes no firmware-progress sensor, and the
+   BMC's SEL records the number verbatim rather than resolving it, so a fixed
+   value keeps the entries greppable without inventing a sensor that does not
+   exist in any SDR. */
+#define OOB_SEL_SENSOR_TYPE_FW_PROGRESS  0x0Fu
+#define OOB_SEL_SENSOR_NUMBER            0x00u
+#define OOB_SEL_EVENT_TYPE_SENSOR_SPEC   0x6Fu
+#define OOB_SEL_ED1_FW_ERROR_OEM_ED2     0x20u
+#define OOB_SEL_EVM_REV                  0x04u
+
+/**
+  Record an out-of-band configuration failure in the BMC's SEL.
+
+  Only called from paths where the BMC has already answered Set BIOS
+  Capabilities, so KCS is known good and this costs one short transaction. The
+  0x6C path deliberately does NOT call this: there the transport itself failed,
+  so an event message would fail the same way.
+
+  Best effort by construction. A failure to report a failure changes nothing the
+  caller can act on, and the POST code and telemetry flag are written either way.
+**/
+STATIC
+VOID
+ReportOobFailure (
+  IN UINT8  Reason
+  )
+{
+  OobIpmiPlatformEvent (
+    OOB_IPMI_SOFTWARE_ID_BIOS_POST,
+    OOB_SEL_EVM_REV,
+    OOB_SEL_SENSOR_TYPE_FW_PROGRESS,
+    OOB_SEL_SENSOR_NUMBER,
+    OOB_SEL_EVENT_TYPE_SENSOR_SPEC,
+    OOB_SEL_ED1_FW_ERROR_OEM_ED2,
+    &Reason,
+    NULL,
+    NULL
+    );
+}
+
 /* ── orchestration ────────────────────────────────────────────────────────── */
 
 STATIC
@@ -872,6 +926,7 @@ BiosCfgOobRun (
   {
     OobPostCode (0x6D);
     OobTelemetryFlag (OOB_TLM_XFER_FAIL);
+    ReportOobFailure (OOB_FAIL_SCHEMA_XFER);
     return;
   }
   OobPostCode (Skipped ? 0x65 : 0x64);
@@ -881,6 +936,7 @@ BiosCfgOobRun (
   if (EFI_ERROR (BuildSnapshot (&Snap, &SnapLen))) {
     OobPostCode (0x6D);
     OobTelemetryFlag (OOB_TLM_DATA_MISSING);
+    ReportOobFailure (OOB_FAIL_SNAPSHOT_BUILD);
     return;
   }
   OobPostCode (0x61);
@@ -893,6 +949,7 @@ BiosCfgOobRun (
     FreePool (Snap);
     OobPostCode (0x6D);
     OobTelemetryFlag (OOB_TLM_XFER_FAIL);
+    ReportOobFailure (OOB_FAIL_SNAPSHOT_XFER);
     return;
   }
   FreePool (Snap);

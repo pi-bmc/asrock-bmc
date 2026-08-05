@@ -19,7 +19,11 @@
 //   0xBD -> SetBIOSPOSTStatus   reqlen 0x01
 //   0xBE -> GetBIOSPOSTStatus   reqlen 0x00
 //   0xB2 -> SetBIOSFWInfo       reqlen 0xFF (variable)
-//   0xA1 -> GetMacAddr          0xAB -> GetChassisID   (not implemented here)
+//   0xA1 -> GetMacAddr          0xAB -> GetChassisID   (0xAB not implemented)
+//
+// 0xA1 IS implemented below, but its request/response layout is INFERRED from
+// the wire rather than transcribed from that table -- see the long note on
+// getMacAddr() for the evidence and for how to falsify it.
 //
 // WHY THE EARLIER ACCEPT-AND-LOG STUB WAS NOT ENOUGH
 //   The BIOS sends 0xBD [01] and immediately follows with 0xBE [] -- a
@@ -35,6 +39,8 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdio>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <vector>
@@ -52,6 +58,10 @@ static constexpr ipmi::NetFn netFnAmiOem32 = 0x32;  // AMI OEM
 
 // --- NetFn 0x3A, transcribed from libasrrcmds.so -------------------------
 static constexpr ipmi::Cmd cmdSetBiosFwInfo = 0xB2;
+static constexpr ipmi::Cmd cmdGetMacAddr    = 0xA1;
+
+// A MAC is six bytes; the vendor table names 0xA1 GetMacAddr.
+static constexpr size_t macLen = 6;
 
 // --- NetFn 0x32, decompiled from BmcSync (DE9D58C3) ----------------------
 static constexpr ipmi::Cmd cmdBmcSyncStatus = 0x3D;
@@ -256,6 +266,117 @@ static ipmi::RspType<uint8_t, uint8_t, uint8_t> getBmcSyncStatus(
 }
 
 // ---------------------------------------------------------------------------
+// 0xA1  GetMacAddr   request: 1 byte index   response: CC + 6 bytes
+// ---------------------------------------------------------------------------
+// The wire format was INFERRED rather than transcribed -- libasrrcmds.so was no
+// longer on hand -- and then CONFIRMED ON HARDWARE (see the measurement at the
+// end of this comment). The inference rested on three things:
+//
+//   1. The vendor command table names 0xA1 "GetMacAddr".
+//   2. Its partner 0xA0 is sent as SEVEN bytes, `01 D0 4C 5B BE 00 00`, i.e.
+//      a 1-byte index followed by a 6-byte MAC. The symmetric getter is then
+//      "index in, MAC out".
+//   3. The value the BIOS writes back, D0:4C:5B:BE:00:00, matches NEITHER BMC
+//      MAC and ends in two zero bytes -- it reads like an uninitialised host
+//      buffer, i.e. exactly what you would expect if the BIOS is echoing back
+//      whatever our data-less reply left in its stack.
+//
+// WHY IT MATTERS: measured 2026-08-04, POST 0x78 holds for 11.39s, and 9s of
+// that is the host issuing ONE request per second. Eight of those eleven
+// requests are this A1/A0 pair, with A1[01] repeated FOUR TIMES byte-identically
+// -- a retry loop. The BMC is not slow (Get LAN Config answers in microseconds);
+// the host is waiting. The same shape was already diagnosed and fixed twice on
+// this board: 0xBD/0xBE (see the header comment above) and BmcSync 0x32/0x3D
+// both stopped looping once the handler returned real data instead of a bare
+// completion code.
+//
+// MEASURED ON HARDWARE, 2026-08-04, same ROM, BMC image before vs after:
+//
+//                       before          after
+//   POST 0x78 dwell     11.39s          4.61s      -6.78s
+//   total POST span     50.19s         39.49s     -10.70s
+//   A1[00] / A1[01]     1x / 4x        1x / 1x    (19 ms apart, no retry)
+//   0xA0 write-backs    3x             0x         (disappeared entirely)
+//
+// The retry loop is gone, which is the causal evidence -- not the wall-clock
+// delta, which alone could be run-to-run noise. 0xA0 vanishing is the tell: the
+// host was only echoing back whatever our data-less reply left in its buffer,
+// so once A1 returned a real MAC there was nothing left to correct. The
+// remaining ~4s at 0x78 is IPMI channel enumeration (28x Get Channel Info) plus
+// Get LAN Config, which are genuine enumeration paced at 1 Hz by the host and
+// are not addressable from the BMC side.
+//
+// POST 0xAD did NOT move (10.54s both runs), as expected: zero IPMI requests
+// occur during it. That dwell is BDS/option-ROM work and needs a different
+// investigation entirely.
+//
+// To re-measure: capture with
+//   busctl monitor --match="...path='/xyz/openbmc_project/state/boot/raw0'"
+// redirected STRAIGHT to a file. Never pipe it through a per-line shell loop
+// that shells out -- a `cut` per line costs ~0.1s, backpressures the stream and
+// silently drops ~80% of the codes (measured: 103 captured vs 783).
+static ipmi::RspType<std::array<uint8_t, macLen>> getMacAddr(
+    ipmi::Context::ptr ctx, uint8_t index)
+{
+    if (!onSystemInterface(ctx))
+    {
+        return ipmi::response(ipmi::ccInsufficientPrivilege);
+    }
+
+    // Observed indices are 0 and 1, and this board has exactly two management
+    // NICs. eth1 is the NC-SI port, which is the one the BIOS cares about.
+    const char* iface = nullptr;
+    switch (index)
+    {
+        case 0:
+            iface = "eth0";
+            break;
+        case 1:
+            iface = "eth1";
+            break;
+        default:
+            return ipmi::responseInvalidFieldRequest();
+    }
+
+    // sysfs rather than the network D-Bus: this is a read of a fact that cannot
+    // be stale, it costs no round trip on a path the host is already polling,
+    // and it keeps the handler free of a dependency on
+    // xyz.openbmc_project.Network being up -- which, during host POST right
+    // after a BMC boot, is not guaranteed.
+    std::string path = std::string("/sys/class/net/") + iface + "/address";
+    std::ifstream f(path);
+    if (!f.is_open())
+    {
+        log<level::ERR>("ASRR-OEM GetMacAddr: interface not present",
+                        phosphor::logging::entry("IFACE=%s", iface));
+        return ipmi::responseResponseError();
+    }
+
+    std::string text;
+    std::getline(f, text);
+
+    std::array<uint8_t, macLen> mac{};
+    unsigned int b[macLen] = {};
+    if (std::sscanf(text.c_str(), "%x:%x:%x:%x:%x:%x", &b[0], &b[1], &b[2],
+                    &b[3], &b[4], &b[5]) != static_cast<int>(macLen))
+    {
+        log<level::ERR>("ASRR-OEM GetMacAddr: unparsable address",
+                        phosphor::logging::entry("IFACE=%s", iface));
+        return ipmi::responseResponseError();
+    }
+    for (size_t i = 0; i < macLen; i++)
+    {
+        mac[i] = static_cast<uint8_t>(b[i]);
+    }
+
+    log<level::INFO>("ASRR-OEM GetMacAddr",
+                     phosphor::logging::entry("INDEX=%u",
+                                              static_cast<unsigned>(index)),
+                     phosphor::logging::entry("IFACE=%s", iface));
+    return ipmi::responseSuccess(mac);
+}
+
+// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 static void registerAmiOemCommands() __attribute__((constructor));
@@ -263,8 +384,8 @@ static void registerAmiOemCommands() __attribute__((constructor));
 static void registerAmiOemCommands()
 {
     log<level::INFO>("asrock ami-oem: registering OEM handshake "
-                     "(NetFn 0x3A: B2/BD/BE implemented from libasrrcmds; "
-                     "B5 F3 A1 AB + NetFn 0x32 72 5D 3D accept-and-log)");
+                     "(NetFn 0x3A: B2/BD/BE from libasrrcmds, A1 GetMacAddr "
+                     "inferred; B5 F3 AB + NetFn 0x32 72 5D accept-and-log)");
 
     ipmi::registerHandler(ipmi::prioOemBase, netFnAsrockOem,
                           cmdSetBiosPostStatus, ipmi::Privilege::Admin,
@@ -274,10 +395,24 @@ static void registerAmiOemCommands()
                           getBiosPostStatus);
     ipmi::registerHandler(ipmi::prioOemBase, netFnAsrockOem, cmdSetBiosFwInfo,
                           ipmi::Privilege::Admin, setBiosFwInfo);
+    // 0xA1 is no longer accept-and-log: answering it with a bare completion
+    // code makes the host retry it four times at 1 Hz during POST. See
+    // getMacAddr for the evidence and for how to check whether this helped.
+    ipmi::registerHandler(ipmi::prioOemBase, netFnAsrockOem, cmdGetMacAddr,
+                          ipmi::Privilege::Admin, getMacAddr);
 
     // Observed but unidentified -- deliberately not a catch-all, so anything
     // new still returns 0xC1 and shows up in the kcsmonitor log.
-    for (ipmi::Cmd c : {0xB5, 0xF3, 0xA1, 0xAB})
+    //
+    // 0xA0, the write half of the MAC pair, is deliberately NOT added here.
+    // It currently returns 0xC1 and that is left alone on purpose: this change
+    // set alters exactly ONE variable (0xA1 now returns data) so the next boot
+    // trace actually attributes the result. Handling 0xA0 as well would make
+    // the measurement uninterpretable. If the 0x78 dwell does not fall, 0xA0 is
+    // the next thing to look at -- but note a host-supplied MAC must never be
+    // persisted into the BMC's network config; the value seen on the wire
+    // (D0:4C:5B:BE:00:00) is not even a real address.
+    for (ipmi::Cmd c : {0xB5, 0xF3, 0xAB})
     {
         ipmi::registerHandler(ipmi::prioOemBase, netFnAsrockOem,
                               static_cast<ipmi::Cmd>(c),

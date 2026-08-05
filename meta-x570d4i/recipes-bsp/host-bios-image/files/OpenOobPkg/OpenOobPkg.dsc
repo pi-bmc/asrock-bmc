@@ -58,6 +58,10 @@
   # Ours
   IpmiKcsLib|OpenOobPkg/Library/IpmiKcsLib/IpmiKcsLib.inf
 
+  # Host side of intel-ipmi-oem. Header-only cost when unused: every entry point
+  # is a leaf request builder, so the linker drops what no driver calls.
+  OobIntelOemLib|OpenOobPkg/Library/OobIntelOemLib/OobIntelOemLib.inf
+
   # Liveness/outcome recording. Not debug scaffolding — on this board it is the
   # only trustworthy way to find out what an injected driver did, because the
   # BMC's IPMI journal is irreproducible across boots and port-80 writes from an
@@ -80,6 +84,7 @@
   #
   OpenOobPkg/Library/IpmiKcsLib/IpmiKcsLib.inf
   OpenOobPkg/Library/OobTelemetryLib/OobTelemetryLib.inf
+  OpenOobPkg/Library/OobIntelOemLib/OobIntelOemLib.inf
 
   #
   # SmbiosBmcPushDxe — SMBIOS push over phosphor-ipmi-blobs. This is the one

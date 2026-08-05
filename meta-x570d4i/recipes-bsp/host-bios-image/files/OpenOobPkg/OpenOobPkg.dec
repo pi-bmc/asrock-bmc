@@ -31,6 +31,15 @@
   #                  on a separate transport driver.
   IpmiKcsLib|Include/Library/IpmiKcsLib.h
 
+  ##  @libraryclass  Host side of the openbmc/intel-ipmi-oem command set — the
+  #                  BIOS-side caller for each command that repository's ipmid
+  #                  provider expects the host to originate. Request and
+  #                  response layouts are transcribed from its handler
+  #                  signatures. Excludes MDR II, which moves its payload
+  #                  through a /dev/vgasharedmem aperture this board does not
+  #                  have; see the header for the full reasoning.
+  OobIntelOemLib|Include/Library/OobIntelOemLib.h
+
 [Protocols]
   ## EFI 1.1 UGA Draw, 982C298B-F4FA-41CB-B838-77AA688FB839.
   ##

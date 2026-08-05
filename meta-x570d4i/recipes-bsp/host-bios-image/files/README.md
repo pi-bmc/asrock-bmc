@@ -17,13 +17,16 @@ Sources are an EDK2 package, one subdirectory per driver, built together from
 OpenOobPkg/
   OpenOobPkg.dec              package GUIDs, PCDs, protocol declarations
   OpenOobPkg.dsc              builds every driver below for X64
-  Include/Library/            IpmiKcsLib.h
+  Include/Library/            IpmiKcsLib.h, OobIntelOemLib.h, OobTelemetryLib.h
   Include/Protocol/           OobIpmiTransport.h, OobVideoRoute.h
   Library/IpmiKcsLib/         THE IPMI-over-KCS transport — one implementation
+  Library/OobIntelOemLib/     host side of openbmc/intel-ipmi-oem (see below)
+  Library/OobTelemetryLib/    liveness/outcome recording to an NV variable
   SmbiosBmcPushDxe/           SMBIOS push only          (displaces an AMI slot)
   BiosCfgOobDxe/              BIOS-config OOB producer  (new FFS)
   OobIpmiDxe/                 transport protocol + AMI compat marker  (new FFS)
   VideoRouteDxe/              per-boot video path selection            (new FFS)
+  OobSetupDefaultsDxe/        reasserts Above 4G Decoding              (new FFS)
 tools/
   romsurgeon.py               strip AMI modules / graft in new FFS files
   uefifv.py                   FV / FFS / LZMA primitives
@@ -133,6 +136,58 @@ different "current" values. It was a defaults template, not a reading.
 The schema half is unchanged in kind — a knob registry genuinely *is* static
 firmware metadata — but it is now a reviewable XML file in this directory rather
 than an opaque constant, and the **values** come from the real varstores.
+
+### `Library/OobIntelOemLib/` — host side of intel-ipmi-oem
+
+Not a driver: a leaf library over `IpmiKcsLib` that any injected module can link
+to issue one command. `openbmc/intel-ipmi-oem` is a BMC-side ipmid provider, so
+every command it registers is one the *host firmware* is expected to send. This
+is the missing other half, with request and response layouts transcribed from
+its handler signatures and each function citing the source it came from.
+
+Twenty commands, chosen by one rule: the BIOS actually originates them.
+
+| NetFn | Commands |
+|---|---|
+| 0x30 | `01` GetBmcVersionString, `02` RestoreConfiguration, `27` GetOemDeviceInfo, `44` SendEmbeddedFwUpdStatus, `57` SetFaultIndication, `66` GetBufferSize, `8E`/`8F` Set/GetDimmOffset, `93` ReadBaseBoardProductId, `9A`/`9B` Get/SetProcessorErrConfig, `B3`/`B4` Get/SetSecurityMode, `D7`/`D8` Set/GetBiosPwdHash, `E5`/`ED` Get/SetNmiSource, `EA`/`EB` Set/GetEfiBootOptions |
+| 0x04 | `02` Platform Event |
+| 0x0A | `44` Add SEL Entry |
+
+Most of intel-ipmi-oem's other 79 handlers serve a *remote* client — Get Chassis
+Status, the SEL and FRU readers, fan control, the firmware-update state machine.
+Those have no host side, so a "reversed" version would be inventing traffic
+rather than mirroring a protocol. `D3`–`D6` are host-initiated but live in
+`BiosCfgOobDxe`, which already implements the chunked SetPayload state machine.
+
+Two marshalling details from ipmid shape the whole file and are easy to get
+wrong: sub-byte response fields are packed LSB-first and **coalesced**, so
+`RspType<bool,bool,bool,uint5_t,...>` is one byte and not four (Get Processor
+Error Config's fourteen fields are seven wire bytes); and `std::string` is
+UCSD-Pascal, a length byte then raw characters with **no NUL**.
+
+**MDR II (NetFn 0x3E, `30`–`3D`) is deliberately absent.** It looks like the
+natural host-side SMBIOS push and it cannot work here. Those commands carry no
+payload — `mdr2SendDataBlock` takes only agent, lock handle, offset, length and
+checksum — because the bytes travel through a shared-memory aperture the BMC
+reads via `/dev/vgasharedmem`. This board has no such aperture: the device node
+does not exist, the aspeed VGA shared-memory driver is not built, and there is
+no device-tree node for it. Nor is there a responder, since `smbios-mdr`
+registers no ipmid handlers at all. `SmbiosBmcPushDxe` uses phosphor-ipmi-blobs
+instead, which carries the table inline over KCS — the right transport for this
+hardware, not a workaround.
+
+The one caller so far is `BiosCfgOobDxe`, which emits a Platform Event
+(sensor type `0Fh` System Firmware Progress, offset `00h` System Firmware Error,
+OEM reason in event data 2) on each of its three transfer-failure paths. Those
+previously left only a POST code, which is gone the moment the board moves on.
+It is **not** called from the KCS-not-ready path, where reporting the failure
+would fail the same way.
+
+`GetBufferSize` is provided but not wired into the transfer loop on purpose.
+The upstream handler returns a hardcoded 63/4, with its own comment admitting
+the host's limit is unknowable from the BMC side — clamping our proven 48-byte
+chunk down to that number would be a regression justified by a constant that
+does not describe this BMC.
 
 ### `OobIpmiDxe/` — IPMI transport, and the removal enabler
 

@@ -7,11 +7,19 @@ PACKAGECONFIG:remove = "cpuinfo cpuinfo-peci"
 # receiver, installed to ${libdir}/blob-ipmid).  This is the default OpenBMC path
 # for a host to push its full SMBIOS table to the BMC over KCS, inline — used by
 # our injected SmbiosBmcPushDxe (recipes-bsp/host-bios-image).  It replaces the
-# old asrock-ipmi-oem AMI-MDR (0x5D) synth path.  We use the blob handler (not
-# the MDRv2 agentSynchronizeData IPMI command set) because it is the standard
-# OpenBMC inline-over-KCS receiver our injected DXE targets. (This smbios-mdr's
-# MDRv2 is IPMI-message based; it has no mmap//dev/mem shared-memory path
-# (verified by grep), so there is no VGA-aperture requirement either way.)
+# old asrock-ipmi-oem AMI-MDR (0x5D) synth path.
+#
+# There is no MDRv2 IPMI alternative to weigh this against. smbios-mdr registers
+# NO ipmid handlers at all -- it ships the xyz.openbmc_project.Smbios.MDR_V2
+# D-Bus service plus this blob handler, and nothing else. The MDR II *IPMI*
+# command set (NetFn 0x3E, cmds 0x30-0x3D) exists only in intel-ipmi-oem, which
+# we do not install, and it could not work here if we did: those commands carry
+# no payload (mdr2SendDataBlock takes only offset/length/checksum) because the
+# bytes move through a shared-memory aperture the BMC reaches via
+# /dev/vgasharedmem. That device does not exist on this board -- no aspeed VGA
+# shared-memory driver, no device-tree node -- so the blob handler is not a
+# preference over MDR II, it is the only inline-over-KCS receiver available.
+# See OpenOobPkg/Include/Library/OobIntelOemLib.h for the host-side reasoning.
 # Enabling this PACKAGECONFIG also pulls phosphor-ipmi-blobs into the build.
 PACKAGECONFIG:append = " smbios-ipmi-blob"
 

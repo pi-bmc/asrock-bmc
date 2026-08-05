@@ -1,0 +1,29 @@
+## @file
+#  Host side of the openbmc/intel-ipmi-oem command set.
+#
+#  Pure request builders over IpmiKcsLib: no state, no events, no protocol
+#  dependency, so any injected driver can link it and issue one command without
+#  pulling in a dispatch order.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = OobIntelOemLib
+  FILE_GUID                      = 61195814-fbb0-4c32-988a-fef1164f1ee6
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = OobIntelOemLib
+
+[Sources]
+  OobIntelOemLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  OpenOobPkg/OpenOobPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  IpmiKcsLib

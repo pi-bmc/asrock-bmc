@@ -8,7 +8,17 @@ SRC_URI:append = " \
 
 do_install:append() {
     # EntityManager reads board configs from .../entity-manager/configurations/
-    install -d ${D}${datadir}/entity-manager/configurations
+    #
+    # NO JC42 DIMM THERMAL SENSORS -- do not add them back. The config used to
+    # declare four (DDR4_{A1,A2,B1,B2}_Temp at bus 7 / 0x18-0x1B). The DIMMs in
+    # this board have no on-DIMM thermal sensor, so hwmontempsensor
+    # instantiated and immediately deleted each one on every scan:
+    #   "Failed to instantiate 'jc42' at address '26' on bus '7'"
+    # ~156 journal lines per boot. Measured 2026-08-04 on the live board:
+    # i2cget -y 7 0x18..0x1B all fail, while the SPD EEPROMs at 0x50..0x53 all
+    # answer 0x0c (DDR4) -- i.e. four DIMMs are present and none carries a TS.
+    # DIMM temperature is therefore not available out-of-band on this board; the
+    # host reports it in-band instead.
     install -m 0644 ${UNPACKDIR}/x570d4i2t.json \
         ${D}${datadir}/entity-manager/configurations/x570d4i2t.json
     # Supermicro PSU as its own vendor config (upstream-style split): probes the
