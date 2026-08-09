@@ -7,13 +7,6 @@
 	model = "ASRockRack X570D4I-2T BMC";
 	compatible = "asrock,x570d4i2t-bmc", "aspeed,ast2500";
 
-	aliases {
-		i2c40 = &i2c0mux0ch0;
-		i2c41 = &i2c0mux0ch1;
-		i2c42 = &i2c0mux0ch2;
-		i2c43 = &i2c0mux0ch3;
-	};
-
 	chosen {
 		stdout-path = &uart5;
 	};
@@ -164,106 +157,14 @@
 };
 
 &i2c0 {
-	/*
-	 * PCIe slot and M.2 SMBus. PCA9545 4-channel mux confirmed at 0x70
-	 * by live i2cdetect (NACK on i2c4, ACK on i2c0).
-	 * Channels: PCIe x16 slot | M.2 slot 1 (NVMe MI) | M.2 slot 2 | Reserved
-	 */
 	status = "okay";
-
-	i2c-mux@70 {
-		compatible = "nxp,pca9545";
-		reg = <0x70>;
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		i2c0mux0ch0: i2c@0 {
-			/* SMBus on PCIe slot (X570D4I-2T: single PCIe x16) */
-			#address-cells = <1>;
-			#size-cells = <0>;
-			reg = <0>;
-		};
-
-		i2c0mux0ch1: i2c@1 {
-			/*
-			 * SMBus on M.2 slot 1 — carries the NVMe MI sideband
-			 * used by the stock BMC to report SDR sensor #56
-			 * "NVME HDD" temperature. The actual NVMe-MI protocol
-			 * is implemented in userspace by dbus-sensors's
-			 * NVMeSensor, configured via entity-manager rather
-			 * than a kernel driver.
-			 */
-			#address-cells = <1>;
-			#size-cells = <0>;
-			reg = <1>;
-		};
-
-		i2c0mux0ch2: i2c@2 {
-			/* SMBus on M.2 slot 2 */
-			#address-cells = <1>;
-			#size-cells = <0>;
-			reg = <2>;
-		};
-
-		i2c0mux0ch3: i2c@3 {
-			/* Reserved */
-			#address-cells = <1>;
-			#size-cells = <0>;
-			reg = <3>;
-		};
-	};
 };
 
 &i2c1 {
-	/*
-	 * Hardware-monitor SMBus (HWM_SMB).
-	 *  - 0x4C: Nuvoton W83773G temperature monitor
-	 *  - 0x2D: Nuvoton NCT6779/NCT6796 family Super-I/O hardware monitor,
-	 *    accessed via its "back door" i2c interface. The host BIOS
-	 *    continues to drive the same chip via LPC (front door) and owns
-	 *    fan PWM/tach control through its built-in Smart Fan curve. The
-	 *    BMC binds nct6775-i2c read-only and surfaces SYSTIN, CPUTIN,
-	 *    AUXTIN, the X570 chipset temp (PCH_CHIP_TEMP, == "X570 Temp" on
-	 *    the stock MegaRAC), voltages, and fan RPMs into hwmon.
-	 *
-	 * Neither chip is declared here: both are instantiated by
-	 * entity-manager (the W83773G / NCT6779 exposes in x570d4i2t.json).
-	 * A static DT node creates the i2c client at BMC boot, which is
-	 * normally with the host in S5 -- the NCT6779 back door does not
-	 * answer then, so nct6775_i2c_probe() fails -ENODEV (silently; it is
-	 * dev_dbg) and the client stays driverless for the rest of the boot.
-	 * dbus-sensors cannot recover it either: it looks for
-	 * .../1-002d/hwmon, does not find it, and its new_device write is
-	 * refused -EBUSY because the DT client already owns the address --
-	 * that is the "Failed to register i2c client nct6779 at 0x2d (-16)"
-	 * spam on every power-on. entity-manager re-probes on PowerState
-	 * transitions, so it handles host-gated chips correctly.
-	 */
 	status = "okay";
 };
 
 &i2c2 {
-	/*
-	 * PSU_SMB1 SMBus (AMI IPMI.conf "PSU_SMB1"). Two devices live here:
-	 *  - 0x38: Supermicro PWS-505P-1H PSU. It is NOT a real PMBus register
-	 *    file (it NAKs PEC and the generic `pmbus` driver fails capability
-	 *    ID) — it is a *standard IPMI FRU* EEPROM. FruDevice parses its
-	 *    Product Info area (SUPERMICRO / PWS-505P-1H / serial); the
-	 *    supermicro-psu-monitor daemon re-publishes that as a PowerSupply
-	 *    inventory item. Supermicro also stores live telemetry in the FRU
-	 *    Internal-Use
-	 *    area (0x09 temp, 0x0A/0x0B fans, 0x0C DC-good, 0x14 AC current) and
-	 *    vendor registers (0xF4 AC volts, 0xF5/F6 AC watts, 0xF2/F3 rated
-	 *    500 W, 0xF1 41 A DC) — read by the supermicro-psu-monitor daemon,
-	 *    which decodes them and publishes the PSU sensors + PowerSupply
-	 *    inventory on D-Bus. Validated against the stock MegaRAC "Power
-	 *    Source" page. No kernel client is bound here; access is raw i2c.
-	 *  - 0x3C: AMD SB-RMI (APML). Version reg 0x20 reads 0x17, but the
-	 *    SB-RMI CTRL/STATUS regs and the MP1 power mailbox NAK all BMC
-	 *    access (driver probe fails -EIO). The stock firmware ships with
-	 *    SUPPORT_APML_IFC=0 — the OEM disabled APML, and AM4/X570 silicon
-	 *    does not expose the EPYC-class SB-RMI power mailbox to the BMC.
-	 */
 	status = "okay";
 };
 
@@ -272,19 +173,6 @@
 };
 
 &i2c4 {
-	/*
-	 * Auxiliary SMBus. Confirmed live device: Nuvoton NCT75 LM75-compatible
-	 * temperature sensor at 0x4f (vendor reg 0xfe=0xde, temp reads ~65°C).
-	 * The PCA9545 mux originally assumed here (0x70) is actually on i2c0.
-	 *
-	 * Not declared here: entity-manager instantiates it as the "Aux Temp"
-	 * TMP75 expose in x570d4i2t.json. The NCT75 is LM75-register-
-	 * compatible, so the lm75 driver's "tmp75" i2c_device_id binds it.
-	 * The chip sits on a host-powered rail, so a static DT node would
-	 * create a client that never gets a driver at BMC boot (host in S5)
-	 * and then blocks dbus-sensors from instantiating it -- see the
-	 * matching note on &i2c1.
-	 */
 	status = "okay";
 };
 
@@ -294,14 +182,6 @@
 };
 
 &i2c6 {
-	/*
-	 * Host-shared SMBus per AMI's IPMI.conf (SMBUS_BUS_NUM=6). Likely
-	 * carries the host-side fan/temperature SuperIO or CPLD that the
-	 * stock BMC's pwmtach.ko configured before commanding fans through
-	 * the AST2500 PWM/Tach controller. Enabled for runtime probing
-	 * (i2cdetect) — children are added once the actual device is
-	 * identified.
-	 */
 	status = "okay";
 };
 
@@ -448,14 +328,6 @@
 			&pinctrl_adc3_default    /* VSOC */
 			&pinctrl_adc4_default    /* VCCM */
 			&pinctrl_adc5_default    /* APU-VDDP */
-			/*
-			 * adc6/7/8 are the AMI net names; the entity-manager
-			 * sensor names (x570d4i2t.json) are given after "->".
-			 * Measured direct (no divider): 1.195 V, 1.024 V and
-			 * 0.972 V respectively. adc7 is the only one of the
-			 * three alive in S5, which is what identifies it as
-			 * the _S5 rail -- keep the two lists in agreement.
-			 */
 			&pinctrl_adc6_default    /* PM-VDD-CLDO  -> 1.2V_CLDO */
 			&pinctrl_adc7_default    /* PM-VDDCR-S5  -> 1.05V_PROM_S5 */
 			&pinctrl_adc8_default    /* PM-VDDCR     -> 1.05V_PROM */

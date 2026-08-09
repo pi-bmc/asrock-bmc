@@ -1,12 +1,52 @@
 /** @file
-  SmbiosBmcPushDxe — at ReadyToBoot, push the host SMBIOS structure table to the
-  BMC via the standard OpenBMC phosphor-ipmi-blobs protocol (blob ID "/smbios"),
-  over the host KCS interface (LPC I/O 0xCA2/0xCA3).
+  SmbiosBmcPushDxe — push host-side platform data to the BMC. Two independent
+  payloads, deliberately carried by ONE module:
 
-  Built as a normal edk2 DXE_DRIVER (UefiDriverEntryPoint + MdePkg libs) so the
-  AMI Aptio DXE dispatcher loads/runs it like any other driver.
+    1. SMBIOS  — the structure table, over phosphor-ipmi-blobs (blob "/smbios")
+                 on the host KCS interface (LPC I/O 0xCA2/0xCA3).
+    2. Inventory — PCIe function and NVMe drive topology, over the AST2500
+                 PCIe-to-AHB (P2A) bridge into BMC DRAM. Feeds Redfish
+                 Storage / Drive / StorageController / PCIeDevice, which the BMC
+                 can populate no other way: this board routes no NVMe-MI SMBus
+                 or MCTP sideband to the BMC (every channel of the i2c0 PCA9545
+                 is silent, SATA is invisible), so nvmesensor and phosphor-nvme
+                 have nothing to read. DXE does — PciIo and NvmExpressPassThru
+                 describe every device — so the data is gathered here and pushed.
 
-  Wire protocol (validated end-to-end by SmbiosBmcPushApp):
+  WHY ONE MODULE. This driver reaches the flash by REPLACING AMI's
+  SendInfoBmcIpmiDxe FFS slot (9DF02DFD), which is on the recipe's default
+  OOB_REPLACE_SLOTS path and needs no free space, no strip profile and no new
+  FFS file. A second driver would have to be grafted in as a NEW file, which
+  only happens under HOST_BIOS_STRIP_OOB=1 with a strip profile — a path that has
+  never been booted on this board. Carrying the inventory payload here is what
+  makes it reach hardware at all. Cost of the coupling: an inventory fault would
+  take the working SMBIOS push down with it, so SMBIOS runs FIRST and every
+  inventory failure is non-fatal and never touches the SMBIOS telemetry fields.
+
+  TIMING — the two payloads are NOT ready at the same moment, and this is the
+  whole reason the scheduling below looks redundant:
+    - SMBIOS is available in DXE (protocol, or the config table AMI fills).
+    - NVMe is NOT. NvmExpressPassThru only exists once NvmExpressDxe has bound
+      the controller, which happens when BDS calls ConnectController — AFTER DXE
+      dispatch. At our entry point there is never an NVMe handle to find. The
+      trigger that works is a protocol notify on NvmExpressPassThru: it is
+      signalled synchronously inside InstallProtocolInterface the moment a drive
+      becomes enumerable, so unlike a timer it does not depend on the tick, and
+      unlike ReadyToBoot it does not depend on BDS reaching the end.
+  Consequently every notify is armed UNCONDITIONALLY and each payload guards
+  itself with its own completion flag. Do not reintroduce a shared "done" gate:
+  the previous single mDone meant a successful SMBIOS push at entry skipped
+  arming any notify at all, which would have left the inventory payload with one
+  shot at the one moment NVMe cannot exist.
+
+  Historical note: the comments that used to assert EndOfDxe/ReadyToBoot "never
+  fire on this board" date from the era when the board stalled at POST 0x99 and
+  DXE never completed. Above-4G Decoding fixed that; the 2026-08-05 boot profile
+  measures a ReadyToBoot->ExitBootServices window, so ReadyToBoot does fire now.
+  It is still not RELIED on here — our 0x76 marker aliases AMI's own codes, so
+  port 80 cannot prove our callback ran. The telemetry NVAR settles it.
+
+  SMBIOS wire protocol (validated end-to-end by SmbiosBmcPushApp):
     IPMI OEM/Group NetFn 0x2E, Cmd 0x80, OEN 0xCF 0xC2 0x00
     request : [OEN(3)][subcmd][CRC16(payload) LE][payload]
     response: [OEN(3)][CRC16(2)][data]            (after the completion code)
@@ -18,10 +58,6 @@
   must start there or Type 0/version is skipped) yet also requires an
   "_SM_"/"_SM3_" anchor somewhere in the buffer (checkSMBIOSVersion); the
   trailing entry point satisfies both.  A LEADING entry point breaks Type 0.
-
-  POST-code markers on port 0x80 (BMC-snooped, BIOS-unused values) trace
-  progress: 0x58 entry, 0x5B smbios-found, 0x5C no-smbios, 0xB8 push-ok,
-  0xB9 push-fail, 0xBA ReadyToBoot.
 
   Copyright (c) 2024, ASRockRack X570D4I-2T OpenBMC port.
   SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -39,6 +75,9 @@
 #include <Guid/EventGroup.h>
 #include <Guid/SmBios.h>
 #include <Protocol/Smbios.h>
+#include <Protocol/PciIo.h>
+#include <Protocol/NvmExpressPassthru.h>
+#include <IndustryStandard/Pci.h>
 
 /* KCS transport and the POST-code helper. This driver owns neither — the
    interface state machine lives in the library so there is exactly one copy. */
@@ -51,6 +90,37 @@
    tools/probecheck.py after pulling the BIOS mux. */
 #include <Library/OobTelemetryLib.h>
 
+/* The host<->BMC inventory blob contract. Mirrored byte-for-byte on the BMC
+   side at meta-x570d4i/recipes-asrock/p2a-inventory-monitor/files/. */
+#include <OobInventoryBlob.h>
+
+/* NVMe admin opcodes, spelled out rather than pulling IndustryStandard/Nvme.h. */
+#define NVME_OPC_GET_LOG_PAGE   0x02u
+#define NVME_OPC_IDENTIFY       0x06u
+
+/* Inventory-specific telemetry. Deliberately confined to the high half: the
+   shared low-half bits (DATA_FOUND, XFER_OK, ...) belong to the SMBIOS payload,
+   and the whole point of one module carrying two payloads is that a decoder can
+   still tell which one did what. For the same reason the inventory path never
+   calls OobTelemetryDetail — DataLen/LastStatus/LastCc describe the SMBIOS push. */
+#define OOB_TLM_INV_PCIE_DONE   0x00010000u
+#define OOB_TLM_INV_NVME_DONE   0x00020000u
+#define OOB_TLM_INV_VGA_FOUND   0x00040000u
+#define OOB_TLM_INV_P2A_OK      0x00080000u
+#define OOB_TLM_INV_P2A_FAIL    0x00100000u
+#define OOB_TLM_INV_NO_DATA     0x00200000u
+
+/* AST2500 VGA function and its P2A register layout within BAR1. Same interface
+   the `culvert` tool drives from Linux. */
+#define AST_VGA_VID             0x1A03u
+#define AST_VGA_DID             0x2000u
+#define AST_P2A_BAR             1
+#define AST_P2A_PKR             0xF000u   /* protection key: write 1 unlock, 0 lock */
+#define AST_P2A_RBAR            0xF004u   /* remap base, bits [31:16] */
+#define AST_P2A_RBAR_MASK       0xFFFF0000u
+#define AST_P2A_WINDOW          0x10000u  /* 64 KiB sliding aperture */
+#define AST_P2A_WINDOW_LEN      0x10000u
+
 /* Inline the standard PI/UEFI GUID so the binary is independent of the EDK2
    tree used to build (QEMU's MdePkg.dec ships a wrong 0x4940 variant). */
 STATIC EFI_GUID mEfiSmbiosProtocolGuid = {
@@ -60,19 +130,18 @@ STATIC EFI_GUID mEfiSmbiosProtocolGuid = {
 
 /* Late-DXE protocols we hang retries off.
 
-   This board gives an injected driver exactly one scheduled opportunity — its
-   entry point. Timer events are armed successfully and never fire (measured:
-   TIMER_ARMED set, Ticks == 0 after five minutes), and neither EndOfDxe nor
-   ReadyToBoot ever arrive. Protocol notifies are different: they are signalled
-   synchronously on the installing driver's thread inside InstallProtocol-
-   Interface, so they do not depend on the timer tick or on BDS running.
+   Protocol notifies are signalled synchronously on the installing driver's
+   thread inside InstallProtocolInterface, so they do not depend on the timer
+   tick or on BDS running — which on this board is the difference between a
+   retry that happens and one that does not.
 
-   These three bracket the window where SMBIOS becomes complete:
-     SMBIOS protocol            — the data source appearing at all
-     PCI enumeration complete   — late DXE, most producers have run
+   These bracket the window where the payloads become complete:
+     SMBIOS protocol            — the SMBIOS data source appearing at all
+     PCI enumeration complete   — late DXE; all PciIo handles now exist
      DXE SMM ready to lock      — very late DXE, last useful moment
-   BmcHasSmbios() makes redundant attempts cheap, so firing on all three costs
-   little and the first one that finds a complete table wins. */
+     NvmExpressPassThru         — a drive just became enumerable (BDS connect);
+                                  the ONLY reliable inventory trigger, see the
+                                  timing note in the file header. */
 STATIC EFI_GUID mPciEnumCompleteGuid = {
   0x30CFE3E7, 0x3DE1, 0x4586,
   { 0xBE, 0x20, 0xDE, 0xAB, 0xA1, 0xB3, 0xB7, 0x93 }
@@ -99,7 +168,11 @@ STATIC EFI_GUID mDxeSmmReadyToLockGuid = {
 
 STATIC CONST CHAR8 mBlobId[] = "/smbios";
 STATIC CONST UINT8 mOen[3] = { 0xCF, 0xC2, 0x00 };
-STATIC BOOLEAN mDone = FALSE;
+
+/* One flag per payload. NEVER merge these — see the header. */
+STATIC BOOLEAN mSmbiosDone = FALSE;
+STATIC BOOLEAN mInvDone    = FALSE;
+
 STATIC UINT8   mLastCC = 0xFF;
 
 
@@ -393,25 +466,32 @@ BuildBlob (UINT8 **Out, UINT32 *OutLen)
   return EFI_SUCCESS;
 }
 
-/* POST-code namespace:
-   0x70 = DXE entry         (AMI does not use 0x6x/0x7x on this platform)
-   0x71 = KCS ping attempt  (immediate, synchronous in entry — proves dispatch)
-   0x72 = KCS ping OK
-   0x73 = KCS ping FAIL
-   0x74 = timer tick        (replaces 0xBB which AMI also uses)
-   0x75 = EndOfDxe fired
-   0x76 = ReadyToBoot fired
-   0x77 = SMBIOS found (blob built)
-   0x78 = no SMBIOS
-   0x79 = push OK
-   0x7A = push fail
-   0x7B = skipped — BMC already holds a byte-identical table (CRC match) */
+/* POST-code namespace. The SMBIOS half (0x70-0x7B) predates the boot profile
+   and 20 of those values alias AMI's own codes, so it is kept as-is for
+   continuity with existing captures. The inventory half uses 0x7C-0x85, which
+   the 2026-08-05 two-boot capture measured as genuinely unused by AMI on this
+   ROM — so an inventory code on port 80 is unambiguous where a SMBIOS one is not.
+     0x70 = DXE entry
+     0x74 = timer tick
+     0x75 = EndOfDxe fired
+     0x76 = ReadyToBoot fired
+     0x77 = SMBIOS found (blob built)
+     0x78 = no SMBIOS
+     0x79 = SMBIOS push OK
+     0x7A = SMBIOS push fail
+     0x7B = SMBIOS skipped — BMC already holds a byte-identical table
+     0x7C = inventory attempt (collection started)
+     0x7D = inventory collected (blob built)
+     0x7E = inventory pushed OK over P2A
+     0x7F = inventory P2A write failed
+     0x80 = inventory aborted — AST2500 VGA function not found
+     0x81 = inventory found nothing to report (no PCIe, no drives) */
 
 STATIC VOID DoPush (VOID)
 {
   EFI_STATUS s;
 
-  if (mDone) return;
+  if (mSmbiosDone) return;
   UINT8 *Buf = NULL; UINT32 Len = 0;
   if (EFI_ERROR (BuildBlob (&Buf, &Len))) {
     OobPostCode (0x78);
@@ -429,13 +509,13 @@ STATIC VOID DoPush (VOID)
      byte-identical table (matching CRC).  A hardware change alters the table,
      so the CRC differs and we re-push. */
   if (BmcHasSmbios (GenCrc (Buf, Len))) {
-    mDone = TRUE; FreePool (Buf); OobPostCode (0x7B);
+    mSmbiosDone = TRUE; FreePool (Buf); OobPostCode (0x7B);
     OobTelemetryFlag (OOB_TLM_XFER_SKIP);
     return;
   }
   s = SendViaBlob (Buf, Len);
   if (!EFI_ERROR (s)) {
-    mDone = TRUE; OobPostCode (0x79);
+    mSmbiosDone = TRUE; OobPostCode (0x79);
     OobTelemetryDetail (Len, s, mLastCC);
     OobTelemetryFlag (OOB_TLM_XFER_OK);
   } else {
@@ -446,12 +526,457 @@ STATIC VOID DoPush (VOID)
   FreePool (Buf);
 }
 
+/* ---------------------------------------------------------------------------
+   Inventory payload: PCIe enumeration
+   --------------------------------------------------------------------------- */
+
+/* Walk the PCI capability list for the PCI Express capability (ID 0x10). Returns
+   its config-space offset, or 0 if absent (non-PCIe function). */
+STATIC UINT8
+FindPcieCap (EFI_PCI_IO_PROTOCOL *PciIo)
+{
+  UINT16 Status;
+  UINT8  Ptr, Id;
+  UINTN  Guard;
+
+  PciIo->Pci.Read (PciIo, EfiPciIoWidthUint16, PCI_PRIMARY_STATUS_OFFSET, 1, &Status);
+  if ((Status & EFI_PCI_STATUS_CAPABILITY) == 0) {
+    return 0;
+  }
+  PciIo->Pci.Read (PciIo, EfiPciIoWidthUint8, PCI_CAPBILITY_POINTER_OFFSET, 1, &Ptr);
+  Guard = 0;
+  while (Ptr >= 0x40 && (Ptr & 0x3) == 0 && Guard++ < 48) {
+    PciIo->Pci.Read (PciIo, EfiPciIoWidthUint8, Ptr, 1, &Id);
+    if (Id == EFI_PCI_CAPABILITY_ID_PCIEXP) {
+      return Ptr;
+    }
+    PciIo->Pci.Read (PciIo, EfiPciIoWidthUint8, (UINT32)Ptr + 1, 1, &Ptr);
+  }
+  return 0;
+}
+
+/* Map a PCIe link-speed encoding (1..5) straight to a generation number. */
+STATIC UINT8
+LinkSpeedToGen (UINT16 Enc)
+{
+  return (Enc >= 1 && Enc <= 5) ? (UINT8)Enc : 0;
+}
+
+STATIC VOID
+FillPcieRecord (EFI_PCI_IO_PROTOCOL *PciIo, OOB_INV_PCIE_RECORD *R)
+{
+  UINTN  Seg, Bus, Dev, Fun;
+  UINT32 Id, Sub, ClassRev;
+  UINT8  HdrType, Cap;
+
+  ZeroMem (R, sizeof (*R));
+
+  PciIo->GetLocation (PciIo, &Seg, &Bus, &Dev, &Fun);
+  R->Segment  = (UINT16)Seg;
+  R->Bus      = (UINT8)Bus;
+  R->Device   = (UINT8)Dev;
+  R->Function = (UINT8)Fun;
+
+  PciIo->Pci.Read (PciIo, EfiPciIoWidthUint32, PCI_VENDOR_ID_OFFSET, 1, &Id);
+  R->VendorId = (UINT16)(Id & 0xFFFF);
+  R->DeviceId = (UINT16)(Id >> 16);
+
+  PciIo->Pci.Read (PciIo, EfiPciIoWidthUint32, PCI_REVISION_ID_OFFSET, 1, &ClassRev);
+  R->RevisionId  = (UINT8)(ClassRev & 0xFF);
+  R->ClassProgIf = (UINT8)((ClassRev >> 8) & 0xFF);
+  R->ClassSub    = (UINT8)((ClassRev >> 16) & 0xFF);
+  R->ClassBase   = (UINT8)((ClassRev >> 24) & 0xFF);
+
+  /* Subsystem IDs live at 0x2C only for a type-0 (endpoint) header. */
+  PciIo->Pci.Read (PciIo, EfiPciIoWidthUint8, PCI_HEADER_TYPE_OFFSET, 1, &HdrType);
+  R->DeviceType = (HdrType & HEADER_TYPE_MULTI_FUNCTION)
+                    ? OOB_INV_PCIE_MULTI_FN : OOB_INV_PCIE_SINGLE_FN;
+  if ((HdrType & HEADER_LAYOUT_CODE) == HEADER_TYPE_DEVICE) {
+    PciIo->Pci.Read (PciIo, EfiPciIoWidthUint32, PCI_SUBSYSTEM_VENDOR_ID_OFFSET, 1, &Sub);
+    R->SubsysVendorId = (UINT16)(Sub & 0xFFFF);
+    R->SubsysId       = (UINT16)(Sub >> 16);
+  }
+
+  Cap = FindPcieCap (PciIo);
+  if (Cap != 0) {
+    UINT32 LinkCap;
+    UINT16 LinkSta;
+    /* PCI Express Capability: LinkCapabilities @cap+0x0C, LinkStatus @cap+0x12. */
+    PciIo->Pci.Read (PciIo, EfiPciIoWidthUint32, (UINT32)Cap + 0x0C, 1, &LinkCap);
+    PciIo->Pci.Read (PciIo, EfiPciIoWidthUint16, (UINT32)Cap + 0x12, 1, &LinkSta);
+    R->GenerationMax   = LinkSpeedToGen ((UINT16)(LinkCap & 0xF));
+    R->LanesMax        = (UINT8)((LinkCap >> 4) & 0x3F);
+    R->GenerationInUse = LinkSpeedToGen ((UINT16)(LinkSta & 0xF));
+    R->LanesInUse      = (UINT8)((LinkSta >> 4) & 0x3F);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Inventory payload: NVMe enumeration
+   --------------------------------------------------------------------------- */
+
+/* Allocate a page-aligned admin buffer (covers any NVMe IoAlign requirement). */
+STATIC VOID *
+AllocAligned (UINTN Bytes)
+{
+  EFI_PHYSICAL_ADDRESS Addr = 0;
+  UINTN Pages = EFI_SIZE_TO_PAGES (Bytes);
+  if (EFI_ERROR (gBS->AllocatePages (AllocateAnyPages, EfiBootServicesData, Pages, &Addr))) {
+    return NULL;
+  }
+  ZeroMem ((VOID *)(UINTN)Addr, EFI_PAGES_TO_SIZE (Pages));
+  return (VOID *)(UINTN)Addr;
+}
+
+STATIC VOID
+FreeAligned (VOID *Buf, UINTN Bytes)
+{
+  if (Buf != NULL) {
+    gBS->FreePages ((EFI_PHYSICAL_ADDRESS)(UINTN)Buf, EFI_SIZE_TO_PAGES (Bytes));
+  }
+}
+
+/* Issue one NVMe admin command through the pass-thru protocol. */
+STATIC EFI_STATUS
+NvmeAdmin (
+  EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL *Pt,
+  UINT32 Nsid, UINT8 Opcode, UINT32 Cdw10,
+  VOID *Buf, UINT32 Len)
+{
+  EFI_NVM_EXPRESS_PASS_THRU_COMMAND_PACKET Pkt;
+  EFI_NVM_EXPRESS_COMMAND     Cmd;
+  EFI_NVM_EXPRESS_COMPLETION  Cpl;
+
+  ZeroMem (&Pkt, sizeof (Pkt));
+  ZeroMem (&Cmd, sizeof (Cmd));
+  ZeroMem (&Cpl, sizeof (Cpl));
+
+  Cmd.Cdw0.Opcode         = Opcode;
+  Cmd.Cdw0.FusedOperation = NORMAL_CMD;
+  Cmd.Nsid                = Nsid;
+  Cmd.Cdw10               = Cdw10;
+  Cmd.Flags               = CDW10_VALID;
+
+  Pkt.NvmeCmd        = &Cmd;
+  Pkt.NvmeCompletion = &Cpl;
+  Pkt.TransferBuffer = Buf;
+  Pkt.TransferLength = Len;
+  Pkt.CommandTimeout = 5000000; /* 500 ms in 100 ns units */
+  Pkt.QueueType      = NVME_ADMIN_QUEUE;
+
+  return Pt->PassThru (Pt, Nsid, &Pkt, NULL);
+}
+
+/* Trim trailing spaces/NULs an NVMe identify string carries, in place. */
+STATIC VOID
+TrimField (char *Dst, CONST UINT8 *Src, UINTN Len)
+{
+  UINTN i;
+  CopyMem (Dst, Src, Len);
+  for (i = Len; i > 0; i--) {
+    if (Dst[i - 1] == ' ' || Dst[i - 1] == 0) {
+      Dst[i - 1] = 0;
+    } else {
+      break;
+    }
+  }
+}
+
+/* Enumerate namespaces on one NVMe controller and append a drive record each. */
+STATIC VOID
+CollectNvme (
+  EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL *Pt,
+  OOB_INV_DRIVE_RECORD *Recs, UINT16 *Count, UINT16 Max)
+{
+  UINT8  *Ident;  /* Identify Controller (4 KiB) */
+  UINT8  *NsBuf;  /* Identify Namespace (4 KiB)  */
+  UINT8  *Smart;  /* SMART / Health log (512 B)  */
+  UINT32  Nsid;
+  char    Model[40], Serial[20], Firmware[8];
+  BOOLEAN HaveCtrl = FALSE;
+
+  Ident = AllocAligned (4096);
+  NsBuf = AllocAligned (4096);
+  Smart = AllocAligned (512);
+  if (Ident == NULL || NsBuf == NULL || Smart == NULL) {
+    goto Done;
+  }
+
+  /* Identify Controller: CNS=1, NSID=0. */
+  if (!EFI_ERROR (NvmeAdmin (Pt, 0, NVME_OPC_IDENTIFY, 1, Ident, 4096))) {
+    TrimField (Serial,   Ident + 4,  20);
+    TrimField (Model,    Ident + 24, 40);
+    TrimField (Firmware, Ident + 64, 8);
+    HaveCtrl = TRUE;
+  }
+
+  Nsid = 0xFFFFFFFF;
+  while (*Count < Max && Pt->GetNextNamespace (Pt, &Nsid) == EFI_SUCCESS) {
+    OOB_INV_DRIVE_RECORD *R = &Recs[*Count];
+    UINT64 Nsze;
+    UINT8  Flbas, Lbads = 9; /* default 512 B if we cannot read the LBA format */
+
+    ZeroMem (R, sizeof (*R));
+    R->Segment  = OOB_INV_LOC_UNKNOWN;
+    R->Bus      = OOB_INV_LOC_UNKNOWN;
+    R->Device   = OOB_INV_LOC_UNKNOWN;
+    R->Function = OOB_INV_LOC_UNKNOWN;
+    R->Protocol = OOB_INV_PROTO_NVME;
+    R->MediaType = OOB_INV_MEDIA_SSD;
+    R->NamespaceId = Nsid;
+    if (HaveCtrl) {
+      CopyMem (R->Model, Model, sizeof (R->Model));
+      CopyMem (R->Serial, Serial, sizeof (R->Serial));
+      CopyMem (R->Firmware, Firmware, sizeof (R->Firmware));
+    }
+
+    /* Identify Namespace: CNS=0, NSID=Nsid. */
+    if (!EFI_ERROR (NvmeAdmin (Pt, Nsid, NVME_OPC_IDENTIFY, 0, NsBuf, 4096))) {
+      Nsze  = *(UINT64 *)(NsBuf + 0);
+      Flbas = NsBuf[26] & 0x0F;             /* current LBA format index */
+      Lbads = (NsBuf[128 + Flbas * 4 + 2]) & 0x3F; /* LBAF[.].LBADS = bits 23:16 */
+      if (Lbads == 0 || Lbads > 31) {
+        Lbads = 9;
+      }
+      R->BlockSizeBytes = (UINT32)1u << Lbads;
+      R->CapacityBytes  = Nsze << Lbads;
+    }
+
+    /* SMART / Health Information log: LID=0x02, whole 512 B, global NSID. */
+    if (!EFI_ERROR (NvmeAdmin (Pt, 0xFFFFFFFF, NVME_OPC_GET_LOG_PAGE,
+                               ((512u / 4u - 1u) << 16) | 0x02u, Smart, 512))) {
+      R->SmartCritWarning = Smart[0];
+      R->CompositeTempK   = (UINT16)(Smart[1] | ((UINT16)Smart[2] << 8));
+      R->AvailableSpare   = Smart[3];
+      R->PercentageUsed   = Smart[5];
+    }
+
+    (*Count)++;
+  }
+
+Done:
+  FreeAligned (Ident, 4096);
+  FreeAligned (NsBuf, 4096);
+  FreeAligned (Smart, 512);
+}
+
+/* ---------------------------------------------------------------------------
+   Inventory payload: P2A write
+   --------------------------------------------------------------------------- */
+
+STATIC EFI_STATUS
+FindAstVga (EFI_PCI_IO_PROTOCOL **Out)
+{
+  EFI_HANDLE *Handles = NULL;
+  UINTN Count = 0, i;
+  EFI_STATUS s;
+
+  s = gBS->LocateHandleBuffer (ByProtocol, &gEfiPciIoProtocolGuid, NULL, &Count, &Handles);
+  if (EFI_ERROR (s)) {
+    return s;
+  }
+  for (i = 0; i < Count; i++) {
+    EFI_PCI_IO_PROTOCOL *PciIo;
+    UINT32 Id;
+    if (EFI_ERROR (gBS->HandleProtocol (Handles[i], &gEfiPciIoProtocolGuid, (VOID **)&PciIo))) {
+      continue;
+    }
+    PciIo->Pci.Read (PciIo, EfiPciIoWidthUint32, PCI_VENDOR_ID_OFFSET, 1, &Id);
+    if ((UINT16)(Id & 0xFFFF) == AST_VGA_VID && (UINT16)(Id >> 16) == AST_VGA_DID) {
+      *Out = PciIo;
+      FreePool (Handles);
+      return EFI_SUCCESS;
+    }
+  }
+  FreePool (Handles);
+  return EFI_NOT_FOUND;
+}
+
+STATIC VOID
+P2aWrite32 (EFI_PCI_IO_PROTOCOL *V, UINT64 Off, UINT32 Val)
+{
+  V->Mem.Write (V, EfiPciIoWidthUint32, AST_P2A_BAR, Off, 1, &Val);
+}
+
+/* Push Len bytes (4-byte padded) into BMC physical address Phys via the P2A
+   sliding window. Phys must be within the DT-reserved region; Len <= 64 KiB. */
+STATIC EFI_STATUS
+P2aPush (EFI_PCI_IO_PROTOCOL *V, UINT32 Phys, VOID *Buf, UINT32 Len)
+{
+  UINT32 Words = (Len + 3) / 4;
+  UINT32 Rbar  = Phys & AST_P2A_RBAR_MASK;
+  UINT32 WinOff = Phys & ~AST_P2A_RBAR_MASK;
+
+  /* One region, one page: the blob is < 64 KiB and 64 KiB-aligned by contract,
+     so a single RBAR programming and a single incrementing burst suffice. */
+  if (WinOff + Len > AST_P2A_WINDOW_LEN) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  /* Enable memory decode on the VGA BAR, then unlock and aim the window. */
+  V->Attributes (V, EfiPciIoAttributeOperationEnable,
+                 EFI_PCI_IO_ATTRIBUTE_MEMORY, NULL);
+  P2aWrite32 (V, AST_P2A_PKR, 1);
+  P2aWrite32 (V, AST_P2A_RBAR, Rbar);
+
+  /* EfiPciIoWidthUint32 increments the MMIO offset per element, so this walks
+     the aperture and lands the whole blob in DRAM in one call. */
+  V->Mem.Write (V, EfiPciIoWidthUint32, AST_P2A_BAR,
+                AST_P2A_WINDOW + WinOff, Words, Buf);
+
+  P2aWrite32 (V, AST_P2A_PKR, 0);
+  return EFI_SUCCESS;
+}
+
+/* ---------------------------------------------------------------------------
+   Inventory payload: assembly + push
+   --------------------------------------------------------------------------- */
+
+/* Every failure path here is silent and non-fatal by design: this module's
+   primary job is the SMBIOS push, and an inventory problem must never cost the
+   BMC its SMBIOS data. Outcomes are recorded in the high-half telemetry bits. */
+STATIC VOID
+DoInventory (VOID)
+{
+  EFI_HANDLE *Handles = NULL;
+  UINTN Count = 0, i;
+  EFI_PCI_IO_PROTOCOL *Vga = NULL;
+  UINT8 *Blob;
+  OOB_INV_HEADER *H;
+  OOB_INV_PCIE_RECORD *PcieRecs;
+  OOB_INV_DRIVE_RECORD *DriveRecs;
+  UINT16 PcieN = 0, DriveN = 0;
+  UINT32 BlobMax, Total;
+  EFI_STATUS s;
+
+  if (mInvDone) {
+    return;
+  }
+  OobPostCode (0x7C);
+
+  BlobMax = sizeof (OOB_INV_HEADER)
+            + OOB_INV_MAX_PCIE * sizeof (OOB_INV_PCIE_RECORD)
+            + OOB_INV_MAX_DRIVES * sizeof (OOB_INV_DRIVE_RECORD);
+  if (BlobMax > OOB_INV_REGION_LEN) {
+    return; /* format ceilings must fit the DT region; compile-time truth */
+  }
+  Blob = AllocateZeroPool (BlobMax);
+  if (Blob == NULL) {
+    return;
+  }
+  H         = (OOB_INV_HEADER *)Blob;
+  PcieRecs  = (OOB_INV_PCIE_RECORD *)(Blob + sizeof (OOB_INV_HEADER));
+  DriveRecs = (OOB_INV_DRIVE_RECORD *)(PcieRecs + OOB_INV_MAX_PCIE);
+
+  /* --- PCIe functions --- */
+  s = gBS->LocateHandleBuffer (ByProtocol, &gEfiPciIoProtocolGuid, NULL, &Count, &Handles);
+  if (!EFI_ERROR (s)) {
+    for (i = 0; i < Count && PcieN < OOB_INV_MAX_PCIE; i++) {
+      EFI_PCI_IO_PROTOCOL *PciIo;
+      if (EFI_ERROR (gBS->HandleProtocol (Handles[i], &gEfiPciIoProtocolGuid, (VOID **)&PciIo))) {
+        continue;
+      }
+      FillPcieRecord (PciIo, &PcieRecs[PcieN]);
+      PcieN++;
+    }
+    FreePool (Handles);
+  }
+  if (PcieN) {
+    OobTelemetryFlag (OOB_TLM_INV_PCIE_DONE);
+  }
+
+  /* --- NVMe drives --- */
+  Handles = NULL; Count = 0;
+  s = gBS->LocateHandleBuffer (ByProtocol, &gEfiNvmExpressPassThruProtocolGuid, NULL, &Count, &Handles);
+  if (!EFI_ERROR (s)) {
+    for (i = 0; i < Count && DriveN < OOB_INV_MAX_DRIVES; i++) {
+      EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL *Pt;
+      if (EFI_ERROR (gBS->HandleProtocol (Handles[i], &gEfiNvmExpressPassThruProtocolGuid, (VOID **)&Pt))) {
+        continue;
+      }
+      CollectNvme (Pt, DriveRecs, &DriveN, OOB_INV_MAX_DRIVES);
+    }
+    FreePool (Handles);
+  }
+  if (DriveN) {
+    OobTelemetryFlag (OOB_TLM_INV_NVME_DONE);
+  }
+
+  /* Nothing worth pushing — leave the region untouched so the BMC keeps
+     whatever a prior boot wrote, and retry on the next notify. Expected at the
+     entry-point attempt, where NVMe cannot exist yet. */
+  if (PcieN == 0 && DriveN == 0) {
+    OobPostCode (0x81);
+    OobTelemetryFlag (OOB_TLM_INV_NO_DATA);
+    FreePool (Blob);
+    return;
+  }
+
+  /* --- compact the two arrays so drive records follow PCIe records with no gap,
+         then finalize the header --- */
+  if (DriveN > 0) {
+    CopyMem (PcieRecs + PcieN, DriveRecs, (UINTN)DriveN * sizeof (OOB_INV_DRIVE_RECORD));
+  }
+  Total = sizeof (OOB_INV_HEADER)
+          + (UINT32)PcieN * sizeof (OOB_INV_PCIE_RECORD)
+          + (UINT32)DriveN * sizeof (OOB_INV_DRIVE_RECORD);
+
+  ZeroMem (H, sizeof (*H));
+  H->Magic         = OOB_INV_MAGIC;
+  H->FormatVersion = OOB_INV_FORMAT_VERSION;
+  H->HeaderSize    = sizeof (OOB_INV_HEADER);
+  H->TotalSize     = Total;
+  H->BootSerial    = (UINT32)AsmReadTsc ();
+  H->PcieRecSize   = sizeof (OOB_INV_PCIE_RECORD);
+  H->DriveRecSize  = sizeof (OOB_INV_DRIVE_RECORD);
+  H->PcieCount     = PcieN;
+  H->DriveCount    = DriveN;
+  H->Crc32         = 0;
+  H->Crc32         = OobInvCrc32 (Blob, Total);
+  OobPostCode (0x7D);
+
+  /* --- ship it over P2A --- */
+  if (EFI_ERROR (FindAstVga (&Vga))) {
+    OobTelemetryFlag (OOB_TLM_INV_P2A_FAIL);
+    OobPostCode (0x80);
+    FreePool (Blob);
+    return;
+  }
+  OobTelemetryFlag (OOB_TLM_INV_VGA_FOUND);
+
+  if (EFI_ERROR (P2aPush (Vga, OOB_INV_BMC_PHYS_ADDR, Blob, Total))) {
+    OobTelemetryFlag (OOB_TLM_INV_P2A_FAIL);
+    OobPostCode (0x7F);
+    FreePool (Blob);
+    return;
+  }
+
+  /* Only latch done once a drive has actually been reported. A PCIe-only push
+     is worth sending (the BMC gets its PCIeDevice list early) but must not end
+     the retries, or a blob captured before BDS connected the NVMe controller
+     would be the final word for the whole boot. */
+  if (DriveN > 0) {
+    mInvDone = TRUE;
+  }
+  OobTelemetryFlag (OOB_TLM_INV_P2A_OK);
+  OobPostCode (0x7E);
+  FreePool (Blob);
+}
+
+/* Both payloads, SMBIOS first: it is the proven one, and it must not be
+   starved by an inventory pass that faults or blocks. */
+STATIC VOID DoWork (VOID)
+{
+  DoPush ();
+  DoInventory ();
+}
+
 /* Protocol-notify retry. Unlike the timer, this actually fires on this board. */
 STATIC VOID EFIAPI
 OnLateProtocol (IN EFI_EVENT Event, IN VOID *Context)
 {
   OobTelemetryFlag (OOB_TLM_PROTO_READY);
-  DoPush ();
+  DoWork ();
 }
 
 STATIC VOID
@@ -466,10 +991,10 @@ ArmProtocolNotify (IN EFI_GUID *Protocol)
 }
 
 STATIC VOID EFIAPI OnReadyToBoot (IN EFI_EVENT E, IN VOID *C)
-{ OobPostCode (0x76); OobTelemetryFlag (OOB_TLM_READYTOBOOT); DoPush (); }
+{ OobPostCode (0x76); OobTelemetryFlag (OOB_TLM_READYTOBOOT); DoWork (); }
 
 STATIC VOID EFIAPI OnEndOfDxe (IN EFI_EVENT E, IN VOID *C)
-{ OobPostCode (0x75); OobTelemetryFlag (OOB_TLM_ENDOFDXE); DoPush (); }
+{ OobPostCode (0x75); OobTelemetryFlag (OOB_TLM_ENDOFDXE); DoWork (); }
 
 STATIC UINTN     mTicks = 0;
 STATIC EFI_EVENT mTimer = NULL;
@@ -480,9 +1005,9 @@ OnTimer (IN EFI_EVENT Event, IN VOID *Context)
   OobPostCode (0x74);
   OobTelemetryTick ();
   OobTelemetryFlag (OOB_TLM_TIMER);
-  DoPush ();
+  DoWork ();
   mTicks++;
-  if (mDone || mTicks > 600) {
+  if ((mSmbiosDone && mInvDone) || mTicks > 600) {
     gBS->SetTimer (Event, TimerCancel, 0);
     gBS->CloseEvent (Event);
     mTimer = NULL;
@@ -510,26 +1035,30 @@ SmbiosBmcPushEntry (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
      time. Reachability is now established by the real transfer instead, whose
      outcome the telemetry records anyway. */
 
-  /* Try immediately. AMI may not have built the SMBIOS table yet, in which case
-     this records DATA_MISSING and the protocol notifies below carry the load. */
-  DoPush ();
+  /* Try immediately. SMBIOS may already be there; the inventory pass will
+     almost certainly report nothing this early (NVMe is bound at BDS connect,
+     long after DXE dispatch) and that is expected, not a failure. */
+  DoWork ();
 
-  if (!mDone) {
-    /* The retries that actually work on this board. */
-    ArmProtocolNotify (&mEfiSmbiosProtocolGuid);
-    ArmProtocolNotify (&mPciEnumCompleteGuid);
-    ArmProtocolNotify (&mDxeSmmReadyToLockGuid);
+  /* Armed UNCONDITIONALLY — never behind a completion flag. The NvmExpress-
+     PassThru notify is the one trigger that fires at the moment a drive becomes
+     enumerable, and gating it on the SMBIOS result (as a single shared "done"
+     flag once did) would silently reduce the inventory payload to its
+     entry-point attempt, i.e. PCIe data and zero drives on every boot. */
+  ArmProtocolNotify (&gEfiNvmExpressPassThruProtocolGuid);
+  ArmProtocolNotify (&mEfiSmbiosProtocolGuid);
+  ArmProtocolNotify (&mPciEnumCompleteGuid);
+  ArmProtocolNotify (&mDxeSmmReadyToLockGuid);
 
-    gBS->CreateEventEx (EVT_NOTIFY_SIGNAL, TPL_CALLBACK, OnEndOfDxe, NULL,
-                        &gEfiEndOfDxeEventGroupGuid, &Event);
-    if (!EFI_ERROR (gBS->CreateEvent (EVT_TIMER | EVT_NOTIFY_SIGNAL, TPL_CALLBACK,
-                                      OnTimer, NULL, &mTimer))) {
-      if (!EFI_ERROR (gBS->SetTimer (mTimer, TimerPeriodic, 20000000ULL))) {
-        OobTelemetryFlag (OOB_TLM_TIMER_ARMED);
-      }
+  gBS->CreateEventEx (EVT_NOTIFY_SIGNAL, TPL_CALLBACK, OnEndOfDxe, NULL,
+                      &gEfiEndOfDxeEventGroupGuid, &Event);
+  if (!EFI_ERROR (gBS->CreateEvent (EVT_TIMER | EVT_NOTIFY_SIGNAL, TPL_CALLBACK,
+                                    OnTimer, NULL, &mTimer))) {
+    if (!EFI_ERROR (gBS->SetTimer (mTimer, TimerPeriodic, 20000000ULL))) {
+      OobTelemetryFlag (OOB_TLM_TIMER_ARMED);
     }
-    gBS->CreateEventEx (EVT_NOTIFY_SIGNAL, TPL_CALLBACK, OnReadyToBoot, NULL,
-                        &gEfiEventReadyToBootGuid, &Event);
   }
+  gBS->CreateEventEx (EVT_NOTIFY_SIGNAL, TPL_CALLBACK, OnReadyToBoot, NULL,
+                      &gEfiEventReadyToBootGuid, &Event);
   return EFI_SUCCESS;
 }

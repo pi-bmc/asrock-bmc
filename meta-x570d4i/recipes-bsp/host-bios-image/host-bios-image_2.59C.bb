@@ -131,24 +131,29 @@ OOB_INJECT_DRIVERS ?= "BiosCfgOobDxe VideoRouteDxe OobSetupDefaultsDxe"
 # Run tools/romsurgeon.py to free space in the dispatched firmware volume and
 # graft in OOB_INJECT_DRIVERS.
 #
-# OFF BY DEFAULT, deliberately: the UEFIReplace-only image below is the path that
-# has actually run on hardware, whereas neither profile has ever been booted, and
-# a stranded DEPEX fails silently — the dependent never dispatches. On a board
-# whose only console is the KVM, that is a blind hang. Enable per-build once you
-# can recover over the SPI mux:  HOST_BIOS_STRIP_OOB = "1"
+# ON BY DEFAULT. This was off while no profile had ever been booted, but the
+# inject-only image has since run on hardware (see the 2026-08-05 boot profile:
+# 37.8s to OS, all four injected drivers accounted for), and the SPI-mux recovery
+# path makes a bad image cheap to undo. The remaining hazard is unchanged — a
+# stranded DEPEX fails silently, and on a board whose only console is the KVM
+# that reads as a blind hang — so keep changes to the profile itself conservative.
 #
-# NOTE the consequence of splitting BiosCfgOobDxe out of SmbiosBmcPushDxe: it is
-# now its own FFS file, so with this disabled the BIOS-config OOB producer does
-# NOT reach the flash and /redfish/v1/Systems/system/Bios goes back to being a
-# defaults listing. do_compile warns about this explicitly.
-HOST_BIOS_STRIP_OOB ?= "0"
+# Turning this back OFF is a real functional regression, not just fewer features:
+#   - BiosCfgOobDxe is its own FFS file since it was split out of
+#     SmbiosBmcPushDxe, so /redfish/v1/Systems/system/Bios reverts to a defaults
+#     listing instead of live values (do_compile warns about this explicitly);
+#   - OobSetupDefaultsDxe stops reasserting Above 4G Decoding, which is what
+#     cleared the terminal POST 0x99 hang with the Tesla K80 installed.
+# Only SmbiosBmcPushDxe (SMBIOS + the P2A PCIe/NVMe inventory push) survives with
+# this disabled, because it reaches flash by displacing an AMI slot instead.
+HOST_BIOS_STRIP_OOB ?= "1"
 
 # Which profile to use when enabled:
 #   inject-only  strips ONLY AMI's Redfish/REST stack (~384 KiB of leaf modules,
 #                zero dependents) to make room, then injects. Lowest risk.
 #   strip-oob    additionally removes PLDM, the SMM BMC island and assorted BMC
 #                feature drivers. Bigger win, more blast radius.
-HOST_BIOS_OOB_PROFILE ?= "inject-only"
+HOST_BIOS_OOB_PROFILE ?= "strip-oob"
 STRIP_PROFILE ?= "${UNPACKDIR}/tools/profiles/${HOST_BIOS_OOB_PROFILE}.yaml"
 STRIPPED_ROM ?= "host-bios-${MACHINE}-2.59C-openoob.rom"
 

@@ -1,0 +1,24 @@
+[Unit]
+Description=Host PCIe/NVMe inventory over P2A (Redfish Storage/Drive/PCIeDevice) for X570D4I-2T
+Wants=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
+
+[Service]
+# Runs as root: /dev/aspeed-p2a-ctrl is root-only, and the daemon unlocks the
+# P2A DRAM window (SET_WINDOW) before mapping it.
+#
+# Must stay resident, and not just to poll: the SCU unlock that lets the host's
+# P2A writes reach DRAM lasts exactly as long as this process holds the device
+# open. If it exits, the next host push is silently discarded (a posted PCIe
+# write gets no acknowledgement, so the host cannot tell). Restart=always is
+# therefore load-bearing, not boilerplate.
+ExecStart=/usr/bin/p2a-inventory-monitor
+Restart=always
+RestartSec=10
+
+# Creates /var/lib/p2a-inventory for the last-known-good inventory cache, which
+# is what lets Redfish answer with the host powered off and across BMC reboots.
+StateDirectory=p2a-inventory
+
+[Install]
+WantedBy=multi-user.target

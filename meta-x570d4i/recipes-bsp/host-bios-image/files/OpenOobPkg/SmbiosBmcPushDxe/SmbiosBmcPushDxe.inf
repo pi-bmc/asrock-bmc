@@ -8,9 +8,15 @@
 #  so the FFS keeps AMI's GUID and UI name and the FILE_GUID below is not what
 #  ends up in the flash image.
 #
-#  This module does SMBIOS and nothing else. The KCS transport and the POST-code
-#  helper come from ../Library/IpmiKcsLib rather than being defined here, so the
-#  interface state machine has exactly one implementation.
+#  This module carries TWO payloads: the SMBIOS table over KCS, and the PCIe/NVMe
+#  inventory blob over the AST2500 P2A bridge (feeding Redfish Storage/Drive/
+#  PCIeDevice, which this board can populate no other way). They ride together
+#  because this replace-slot is the only injection path that reaches flash
+#  without a strip profile — see the timing and coupling notes in the .c header.
+#
+#  The KCS transport and the POST-code helper come from ../Library/IpmiKcsLib
+#  rather than being defined here, so the interface state machine has exactly
+#  one implementation.
 #
 #  Copyright (c) 2024, ASRockRack X570D4I-2T OpenBMC port.
 #  SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -46,6 +52,8 @@
 
 [Protocols]
   gEfiSmbiosProtocolGuid              ## CONSUMES
+  gEfiPciIoProtocolGuid               ## CONSUMES  ## Inventory: PCIe sweep + P2A
+  gEfiNvmExpressPassThruProtocolGuid  ## CONSUMES  ## NOTIFY
 
 [Guids]
   gEfiEventReadyToBootGuid            ## CONSUMES  ## Event

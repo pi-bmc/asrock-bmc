@@ -87,9 +87,14 @@
   OpenOobPkg/Library/OobIntelOemLib/OobIntelOemLib.inf
 
   #
-  # SmbiosBmcPushDxe — SMBIOS push over phosphor-ipmi-blobs. This is the one
-  # module the proven injection path REPLACES the AMI SendInfoBmcIpmiDxe FFS slot
-  # (9DF02DFD) with, so it lands in the flash image without needing free space.
+  # SmbiosBmcPushDxe — SMBIOS push over phosphor-ipmi-blobs, PLUS the PCIe/NVMe
+  # inventory push over the AST2500 P2A bridge (feeding Redfish Storage/Drive/
+  # PCIeDevice, which this board can populate no other way — it routes no NVMe-MI
+  # sideband to the BMC). This is the one module the proven injection path
+  # REPLACES the AMI SendInfoBmcIpmiDxe FFS slot (9DF02DFD) with, so it lands in
+  # the flash image without needing free space — which is exactly why the
+  # inventory payload rides here instead of in a driver of its own: a new FFS
+  # file only reaches flash under HOST_BIOS_STRIP_OOB=1.
   #
   OpenOobPkg/SmbiosBmcPushDxe/SmbiosBmcPushDxe.inf
 

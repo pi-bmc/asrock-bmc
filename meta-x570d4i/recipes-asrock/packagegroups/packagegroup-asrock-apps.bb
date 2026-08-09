@@ -34,6 +34,7 @@ RDEPENDS:${PN}-system = " \
         entity-manager \
         virtual-media \
         supermicro-psu-monitor \
+        p2a-inventory-monitor \
         phosphor-software-manager \
         phosphor-software-manager-bios-software-update \
         smbios-mdr \
