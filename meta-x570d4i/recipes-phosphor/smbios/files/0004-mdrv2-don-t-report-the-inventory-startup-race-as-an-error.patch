@@ -1,0 +1,68 @@
+From: Nick Atkins <nbatkins@gmail.com>
+Date: Sat, 9 Aug 2026 00:00:00 +0000
+Subject: [PATCH] mdrv2: don't report the inventory startup race as an error
+
+systemInfoUpdate() looks up the Inventory anchor object that SMBIOS
+content hangs off. At BMC startup that object does not exist yet -- the
+configuration provider (entity-manager) publishes it only after it has
+probed FRUs, which on this board takes ~25 seconds after smbios-mdr
+starts. The lookup therefore throws ResourceNotFound and motherboardPath
+comes back empty, producing three error lines per boot:
+
+    Exception while trying to find Inventory anchor object for SMBIOS content ...
+    Failed to query system motherboard: ...
+    Failed to get system motherboard dbus path. Setting up a match rule
+
+None of them indicates a fault. The code immediately installs an
+interfacesAdded match rule for exactly this case and recovers on its own:
+
+    Successful match on system interface
+    Found Inventory anchor object for SMBIOS content ...: /xyz/.../board/...
+
+So the normal path emits three errors and then quietly succeeds, which
+trains you to ignore smbios-mdr's error output.
+
+Report the absent anchor at debug (the two catch-block lines said the
+same thing twice, so fold them into one), and keep the fallback itself at
+info rather than dropping it entirely -- on a board where the anchor never
+appears, that line is the only breadcrumb explaining why SMBIOS inventory
+stayed empty.
+
+Upstream-Status: Pending
+
+Signed-off-by: Nick Atkins <nbatkins@gmail.com>
+---
+diff --git a/src/mdrv2.cpp b/src/mdrv2.cpp
+index a6cd342..59e4b95 100644
+--- a/src/mdrv2.cpp
++++ b/src/mdrv2.cpp
+@@ -435,17 +435,23 @@ void MDRV2::systemInfoUpdate()
+     }
+     catch (const sdbusplus::exception_t& e)
+     {
+-        lg2::error(
+-            "Exception while trying to find Inventory anchor object for SMBIOS content {I}: {E}",
++        // Not an error: this runs at startup, and the inventory subtree does
++        // not exist until the configuration provider (entity-manager) has
++        // published it, which can be tens of seconds later. The match rule
++        // installed below is what handles that, so report at debug and let the
++        // fallback do its job.
++        lg2::debug(
++            "Inventory anchor object for SMBIOS content {I} not present yet: {E}",
+             "I", smbiosInventoryPath, "E", e.what());
+-        lg2::error("Failed to query system motherboard: {ERROR}", "ERROR",
+-                   e.what());
+     }
+ 
+     if (motherboardPath.empty())
+     {
+-        lg2::error(
+-            "Failed to get system motherboard dbus path. Setting up a match rule");
++        // Deliberate fallback, not a failure -- kept at info so that a board
++        // where the anchor never appears still leaves a breadcrumb explaining
++        // why SMBIOS inventory is empty.
++        lg2::info(
++            "System motherboard dbus path not available yet. Setting up a match rule");
+ 
+         if (motherboardConfigMatch)
+         {

@@ -1,0 +1,58 @@
+From: Nick Atkins <nbatkins@gmail.com>
+Date: Sat, 9 Aug 2026 00:00:00 +0000
+Subject: [PATCH] Utils: an absent SpecialMode service is not an error
+
+setupManufacturingModeMatch() unconditionally Gets the SpecialMode
+property from xyz.openbmc_project.SpecialMode. That service is Intel's
+manufacturing-mode manager and does not exist outside Intel platforms,
+so the call fails with ServiceUnknown, surfaced through the asio error
+mapping as host_unreachable:
+
+    error getting SpecialMode status: 'No route to host'
+
+Every daemon that links Utils.cpp calls this once at startup, so a
+non-Intel BMC gets one such line per sensor daemon on every boot --
+four of them here (adcsensor, fansensor, hwmontempsensor, ipmbsensor).
+
+The existing handling is already correct: it returns, leaving
+manufacturingMode false, which is both the default and the safe answer.
+Only the log level is wrong. Report an absent service at debug and keep
+error for every other failure, which stays genuinely worth seeing.
+
+Upstream-Status: Pending
+
+Signed-off-by: Nick Atkins <nbatkins@gmail.com>
+---
+diff --git a/src/Utils.cpp b/src/Utils.cpp
+index b3d9ed904..72a9493bd 100644
+--- a/src/Utils.cpp
++++ b/src/Utils.cpp
+@@ -830,9 +830,25 @@ void setupManufacturingModeMatch(sdbusplus::asio::connection& conn)
+            const std::variant<std::string>& getManufactMode) {
+             if (ec)
+             {
+-                lg2::error(
+-                    "error getting SpecialMode status: '{ERROR_MESSAGE}'",
+-                    "ERROR_MESSAGE", ec.message());
++                // xyz.openbmc_project.SpecialMode is Intel's manufacturing
++                // mode manager and simply does not exist on most platforms,
++                // where the Get fails as ServiceUnknown -- surfaced here as
++                // host_unreachable ("No route to host"). Manufacturing mode
++                // then stays false, which is both the default and the safe
++                // answer, so an absent service is not an error. Every daemon
++                // that links Utils.cpp logs this once at startup, so on a
++                // non-Intel BMC it is pure noise repeated per daemon.
++                if (ec == boost::system::errc::host_unreachable)
++                {
++                    lg2::debug(
++                        "SpecialMode service absent, staying out of manufacturing mode");
++                }
++                else
++                {
++                    lg2::error(
++                        "error getting SpecialMode status: '{ERROR_MESSAGE}'",
++                        "ERROR_MESSAGE", ec.message());
++                }
+                 return;
+             }
+             const auto* manufacturingModeStatus =

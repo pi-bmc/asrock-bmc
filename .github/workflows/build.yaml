@@ -23,7 +23,7 @@ env:
   # GHCR packages do not expire after 7 days and are not subject to the 10 GB
   # repo cache limit, so builds can always be resumed from prior sstate.
   CACHE_IMAGE: ghcr.io/${{ github.repository }}/yocto-cache
-  # Must match DL_DIR / SSTATE_DIR pinned in kas.yml (TOPDIR = <workspace>/build).
+  # Must match DL_DIR / SSTATE_DIR pinned in .config.yaml (TOPDIR = <workspace>/build).
   DL_DIR: ${{ github.workspace }}/build/downloads
   SSTATE_DIR: ${{ github.workspace }}/build/sstate-cache
   # Cache push/pull needs a write-capable token; fork PRs only get a read-only
@@ -35,7 +35,7 @@ env:
   CACHE_CHECKPOINT_INTERVAL_SECONDS: "1200"
 
 jobs:
-  # Single job: one `kas build kas.yml` assembles obmc-phosphor-image (the
+  # Single job: one `kas build` assembles obmc-phosphor-image (the
   # flashable *.static.mtd) end to end. Splitting the build across per-layer
   # jobs did NOT help — each job runs on a fresh ephemeral runner with no
   # shared sstate, so the split just rebuilt the cross-toolchain in every job
@@ -98,7 +98,7 @@ jobs:
             checkpoint_pid=$!
             trap '[ -n "${checkpoint_pid}" ] && kill "${checkpoint_pid}" 2>/dev/null || true' EXIT INT TERM
           fi
-          kas build kas.yml
+          kas build
 
       - name: Save Yocto OCI caches
         if: ${{ always() && env.CACHE_ENABLED == 'true' }}

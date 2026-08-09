@@ -57,14 +57,18 @@ do_install[postfuncs] += "remove_legacy_bios_update_script"
 # entity-manager reaches "started" well before it finishes publishing inventory
 # objects. So poll for the object in ExecStartPre instead.
 #
-# NOTE: the "Missing property Name/Polarity on ...MuxOutputs1" warnings are a
-# SEPARATE, harmless thing -- the daemon walks mux outputs and logs one past the
-# end. Our config declares a single MuxOutputs entry, which is correct.
+# The "Missing property Name/Polarity on ...MuxOutputs1" errors were a SEPARATE,
+# harmless thing -- the daemon discovers how many mux outputs exist by walking
+# MuxOutputs0, MuxOutputs1, ... until one is missing, and logged the absent one
+# that ends the loop. Our config declares a single MuxOutputs entry, which is
+# correct; 0001 makes the probe use a non-logging getter so a correct config
+# stops looking broken.
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 
 SRC_URI:append = " \
     file://wait-for-spiflash-config.sh \
     file://10-wait-for-config.conf \
+    file://0001-software-manager-don-t-log-the-MuxOutputs-probe-terminator.patch \
     "
 
 install_bios_update_startup_guard() {

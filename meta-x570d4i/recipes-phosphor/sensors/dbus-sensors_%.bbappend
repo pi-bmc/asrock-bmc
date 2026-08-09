@@ -14,3 +14,23 @@ PACKAGECONFIG = " \
         hwmontempsensor \
         ipmbsensor \
         "
+
+# fansensor unconditionally opens pwmN_enable to take the channel out of
+# automatic regulation, which only I2C fan controllers like the MAX31790 have.
+# Our fans hang off the AST2500's own PWM/tach block (aspeed-pwm-tacho), which
+# exposes just pwmN and fanN_input -- always manual, nothing to switch -- so all
+# three headers logged "Error read/write '.../pwmN_enable'" on every config
+# reload while working perfectly. The patch skips a missing file silently, the
+# way enableFanInput() already handles a missing fanN_enable.
+#
+# 0002 silences one "error getting SpecialMode status: 'No route to host'" per
+# sensor daemon: that service is Intel's manufacturing-mode manager and does not
+# exist here, which the code already treats correctly -- only the log level was
+# wrong. 0003 stops fansensor reporting its own startup race against
+# entity-manager as a missing fan configuration.
+FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
+SRC_URI += " \
+    file://0001-fan-do-not-log-an-error-when-pwmN_enable-is-absent.patch \
+    file://0002-Utils-an-absent-SpecialMode-service-is-not-an-error.patch \
+    file://0003-fan-don-t-report-a-startup-race-as-a-missing-config.patch \
+    "

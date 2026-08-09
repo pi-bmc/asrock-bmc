@@ -10,7 +10,7 @@ is fetched, unmodified, from upstream OpenBMC by [kas](https://kas.readthedocs.i
 
 ```
 asrock-bmc/
-├── kas.yml             # the whole build definition: pins + layer list + local.conf
+├── .config.yaml        # the whole build definition: pins + layer list + local.conf
 └── meta-x570d4i/     # the only layer we maintain
 ```
 
@@ -31,39 +31,33 @@ subtree. So a *single* upstream clone supplies every layer this board needs:
 | `meta-asrock` (base + meta-common) | openbmc/openbmc                 |
 | **`meta-x570d4i`**               | **this repo**                   |
 
-`openbmc/openbmc` is pinned to a fixed commit in [kas.yml](kas.yml) so the build
+`openbmc/openbmc` is pinned to a fixed commit in [.config.yaml](.config.yaml) so the build
 is reproducible and byte-for-byte equivalent to building `MACHINE=x570d4i2t`
 inside a full openbmc tree at that commit.
 
 ## Building
 
-### Option A — containerized (recommended, no host dependencies)
-
 ```sh
-# https://github.com/siemens/kas — kas-container needs only docker/podman
-kas-container build kas.yml
+pipx install kas     # or: pip install kas
+kas build
 ```
 
-### Option B — local kas
-
-```sh
-pip install kas      # or: pipx install kas
-kas build kas.yml
-```
+kas reads [.config.yaml](.config.yaml) from the working directory automatically,
+so no config argument is needed.
 
 The image lands in `build/tmp/deploy/images/x570d4i2t/`.
 
 ### Interactive / bitbake shell
 
 ```sh
-kas shell kas.yml
+kas shell
 # then, e.g.:
 bitbake obmc-phosphor-image
 ```
 
 ## Updating upstream
 
-Bump the `commit:` under the `openbmc` repo in [kas.yml](kas.yml) to a newer
+Bump the `commit:` under the `openbmc` repo in [.config.yaml](.config.yaml) to a newer
 `openbmc/openbmc` revision, then rebuild and re-test. Nothing else moves —
 the upstream layers travel together with that single pin.
 # asrock-bmc

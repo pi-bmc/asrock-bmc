@@ -56,6 +56,13 @@ SRC_URI:append = " file://0002-quiet-optional-bios-active-lookup.patch"
 # back to the bare device locator. Required for this board's per-bank DIMM
 # numbering — see the memoryLocationTable comment above.
 SRC_URI:append = " file://0003-dimm-match-full-bank-device-locator.patch"
+
+# Stop the Inventory-anchor startup race being logged as three errors per boot.
+# smbios-mdr starts before entity-manager has published the board object (~25s
+# gap here), installs an interfacesAdded match rule for exactly that case, and
+# recovers on its own -- the journal shows "Successful match on system
+# interface" right after. Demoted to debug/info; see the patch header.
+SRC_URI:append = " file://0004-mdrv2-don-t-report-the-inventory-startup-race-as-an-error.patch"
 PATCHTOOL = "patch"
 
 do_install:append() {

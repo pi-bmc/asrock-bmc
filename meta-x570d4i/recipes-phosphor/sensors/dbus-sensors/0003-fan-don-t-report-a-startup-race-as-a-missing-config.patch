@@ -1,0 +1,55 @@
+From: Nick Atkins <nbatkins@gmail.com>
+Date: Sat, 9 Aug 2026 00:00:00 +0000
+Subject: [PATCH] fan: don't report a startup race as a missing config
+
+createSensors() runs from a GetSensorConfiguration callback that fires
+again on every InterfacesAdded. On a cold boot it therefore runs once
+before entity-manager has published any board configuration at all, and
+with nothing to match against, every fan found in sysfs reports
+
+    failed to find match for '/sys/class/hwmon/hwmon0/fan1_input'
+
+before matching correctly seconds later once the configuration arrives.
+On this board that is three error lines per boot for three fans that are
+configured perfectly well.
+
+Distinguish the two cases by the only thing that separates them: whether
+there were any configurations to match against. An unmatched fan with a
+populated configuration set is still a real misconfiguration and is
+still logged at error.
+
+Upstream-Status: Pending
+
+Signed-off-by: Nick Atkins <nbatkins@gmail.com>
+---
+diff --git a/src/fan/FanMain.cpp b/src/fan/FanMain.cpp
+index 8b20d20a5..65a650347 100644
+--- a/src/fan/FanMain.cpp
++++ b/src/fan/FanMain.cpp
+@@ -410,8 +410,24 @@ void createSensors(
+             }
+             if (sensorData == nullptr)
+             {
+-                lg2::error("failed to find match for '{PATH}'", "PATH",
+-                           path.string());
++                // This callback re-runs on every InterfacesAdded, so on a cold
++                // boot it fires once before entity-manager has published any
++                // board configuration at all. With nothing to match against,
++                // every fan in sysfs "fails to find a match" and then matches
++                // fine seconds later -- a startup race, not a misconfigured
++                // system. Only complain once there are configurations to have
++                // matched against.
++                if (sensorConfigurations.empty())
++                {
++                    lg2::debug(
++                        "no configurations loaded yet, deferring '{PATH}'",
++                        "PATH", path.string());
++                }
++                else
++                {
++                    lg2::error("failed to find match for '{PATH}'", "PATH",
++                               path.string());
++                }
+                 continue;
+             }
+ 

@@ -41,7 +41,24 @@ do_install:append() {
     #   1 0x2d/0x4c   NCT6779 + W83773G, instantiated by entity-manager
     #   2 0x3c        AMD SB-RMI (APML), answers 0x20 but NAKs everything else
     #   4 0x4e/0x4f   NCT75 aux temp, instantiated by entity-manager
-    #   6 0x60        unidentified responder on the host-shared SMBus
+    #   1 0x1c/0x1d     intermittent non-FRU responders. fru-device probes
+    #                 0x1c, gets an ACK, then fails the FRU header read
+    #                 ("failed to read bus 1 address 28 base offset 0").
+    #   6 0x28/0x37/0x60  responders on the host-shared SMBus. These only
+    #                 answer while the HOST IS POWERED ON, which is why 0x28
+    #                 and 0x37 were missed originally -- every earlier survey
+    #                 ran with the host off. None carries a FRU header.
+    # NOTE the log prints the address in DECIMAL ("failed to read bus 6 address
+    # 55" is 0x37, "bus 1 address 28" is 0x1c) while this file is hex.
+    #
+    # The motherboard FRU is NOT on bus 1. It is bus 7 / 0x57 -- the eeprom@57
+    # declared in the DTS, which the kernel binds and FruDevice reads over sysfs
+    # via findI2CEeproms(); that call returns a skipList, so a DT-declared
+    # EEPROM is never raw-probed and never needs a blacklist entry. Verified on
+    # the live board: /xyz/openbmc_project/FruDevice/X570D4I_2T has BUS=7
+    # ADDRESS=87 and carries BOARD_PRODUCT_NAME, while .../FruDevice/1_28 is a
+    # bare Inventory.Item.I2CDevice probe stub that makeProbeInterface() creates
+    # for any address that ACKs, with no FRU properties at all.
     # 2/0x38 is deliberately NOT blocked: that is the PWS-505P-1H FRU that the
     # supermicro-pws-505p-1h.json probe matches on. Bus 7 needs no entries --
     # the SPD/FRU EEPROMs there are kernel-bound, and FruDevice's

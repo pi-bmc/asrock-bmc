@@ -4,10 +4,9 @@
 # machine layer. Everything else is pulled, unmodified, from upstream
 # OpenBMC by kas.
 #
-# Build:
-#     kas build kas.yml
-# or, fully containerized (no host deps):
-#     kas-container build kas.yml
+# Build (kas auto-discovers this file as .config.yaml in the working
+# directory, so no config argument is needed):
+#     kas build
 #
 # The resulting image is bit-for-bit equivalent to building MACHINE=x570d4i2t
 # inside a full openbmc/openbmc tree at the pinned commit below.
@@ -38,7 +37,7 @@ repos:
   # ---------------------------------------------------------------------------
   openbmc:
     url: https://github.com/openbmc/openbmc.git
-    commit: dfa98872f00c31da7d273edbc7083716f7f55b39
+    commit: 75c02ee65282881edd30f6aec0fe34e70b9ac1e6
     layers:
       meta:
       meta-openembedded/meta-oe:
@@ -52,7 +51,7 @@ repos:
       meta-asrock:
 
   # ---------------------------------------------------------------------------
-  # This repository (the one containing this kas.yml). The only layer we own.
+  # This repository (the one containing this .config.yaml). The only layer we own.
   # ---------------------------------------------------------------------------
   asrock-x570d4i2t:
     layers:
@@ -68,6 +67,46 @@ local_conf_header:
     USER_CLASSES ?= "buildstats"
     PATCHRESOLVE = "noop"
     CONF_VERSION = "2"
+    # ---------------------------------------------------------------------
+    # uninative: track upstream oe-core (5.2), not openbmc's pinned 5.1.
+    #
+    # uninative makes native/cross sstate portable by running native binaries
+    # against its own bundled glibc instead of the host's. openbmc's pinned
+    # oe-core still ships uninative 5.1, whose glibc is 2.43, declared via
+    # UNINATIVE_MAXGLIBCVERSION = "2.43". When the host glibc is NEWER than
+    # that, uninative.bbclass deliberately raises and disables itself
+    # ("Disabling uninative so that sstate is not corrupted"), because natives
+    # compiled against the newer host glibc cannot run on the older loader.
+    #
+    # Arch moved glibc 2.43 -> 2.44 on 2026-07-29, which silently flipped
+    # uninative off mid-stream. The result is a sstate cache holding a mix of
+    # artifacts: ones staged earlier keep the uninative loader, while ones
+    # built afterwards link host glibc 2.44 symbols. Loading the two together
+    # fails at the dynamic linker, e.g.
+    #
+    #   pseudo: .../sysroots-uninative/x86_64-linux/lib/libm.so.6:
+    #     version `GLIBC_2.44' not found (required by .../libsqlite3.so.0)
+    #
+    # which bitbake only surfaces as the opaque "Failed to spawn fakeroot
+    # worker ... [Errno 32] Broken pipe".
+    #
+    # Upstream oe-core already bumped to uninative 5.2 (glibc 2.44); openbmc
+    # has not pulled it yet. Adopt it here so uninative stays ENABLED and both
+    # generations of sstate remain loadable. Drop this block once the openbmc
+    # pin above ships >= 5.2 (check meta/conf/distro/include/yocto-uninative.inc).
+    # :forcevariable is required, not stylistic. yocto-uninative.inc is pulled
+    # in via the distro conf, which bitbake parses AFTER local.conf, so its
+    # plain "=" on UNINATIVE_VERSION/UNINATIVE_MAXGLIBCVERSION would overwrite
+    # anything set here. The CHECKSUM flags are "?=" upstream, so a plain "="
+    # already wins for those. Setting the checksums without forcing the version
+    # yields 5.1-with-5.2-checksums and a fetch "Checksum mismatch!".
+    UNINATIVE_MAXGLIBCVERSION:forcevariable = "2.44"
+    UNINATIVE_VERSION:forcevariable = "5.2"
+    UNINATIVE_CHECKSUM[aarch64] = "8cf46c7ba75ebb1863fd6b74cf7d7ab910a3e99de4f01b1e9490babf8e6b9e05"
+    # NB: 2b63a078... is the 5.1 tarball's checksum - using it here pins the
+    # 5.2 URL to the 5.1 hash and the fetch fails. Verified against the real
+    # 5.2 tarball with sha256sum, and matches upstream oe-core's pin.
+    UNINATIVE_CHECKSUM[x86_64] = "1a2749c1379fd9f60ea3c82f1bf4844924d5a99117b74a70c57036e94e2379d4"
     # Use the official prebuilt node binaries (meta-x570d4i/recipes-devtools/
     # nodejs/) instead of compiling nodejs-native from source for webui-vue;
     # saves ~30 CPU-minutes on cold builds.

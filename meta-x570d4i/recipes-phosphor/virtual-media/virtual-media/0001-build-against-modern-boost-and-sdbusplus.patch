@@ -1,6 +1,10 @@
 From: ASRock Rack X570D4I-2T OpenBMC port
-Subject: [PATCH] build against Boost 1.90 / sdbusplus C++23
+Subject: [PATCH] build against current Boost / sdbusplus C++23
 Upstream-Status: Pending
+
+Nothing below pins a specific Boost version: boost/process/v1.hpp,
+expires_after and c++23 are all correct for every release from 1.90 onward.
+Built and run against 1.90 and 1.91.
 
 This tree was last touched in 2023 and does not compile against the current
 OpenBMC toolchain:

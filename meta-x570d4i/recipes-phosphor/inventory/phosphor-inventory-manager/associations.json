@@ -1,0 +1,130 @@
+[
+    {
+        "path": "system/board/ASRock_Rack_X570D4I/FAN0",
+        "endpoints": [
+            {
+                "types": {
+                    "rType": "inventory",
+                    "fType": "sensors"
+                },
+                "paths": [
+                    "/xyz/openbmc_project/sensors/fan_tach/FAN0"
+                ]
+            },
+            {
+                "types": {
+                    "rType": "fault_identified_by",
+                    "fType": "fault_identifying"
+                },
+                "paths": [
+                    "/xyz/openbmc_project/led/groups/fan0_fault"
+                ]
+            },
+            {
+                "types": {
+                    "rType": "cooled_by",
+                    "fType": "cooling"
+                },
+                "paths": [
+                    "/xyz/openbmc_project/inventory/system/board/ASRock_Rack_X570D4I"
+                ]
+            }
+        ]
+    },
+    {
+        "path": "system/board/ASRock_Rack_X570D4I/FAN1",
+        "endpoints": [
+            {
+                "types": {
+                    "rType": "inventory",
+                    "fType": "sensors"
+                },
+                "paths": [
+                    "/xyz/openbmc_project/sensors/fan_tach/FAN1"
+                ]
+            },
+            {
+                "types": {
+                    "rType": "fault_identified_by",
+                    "fType": "fault_identifying"
+                },
+                "paths": [
+                    "/xyz/openbmc_project/led/groups/fan1_fault"
+                ]
+            },
+            {
+                "types": {
+                    "rType": "cooled_by",
+                    "fType": "cooling"
+                },
+                "paths": [
+                    "/xyz/openbmc_project/inventory/system/board/ASRock_Rack_X570D4I"
+                ]
+            }
+        ]
+    },
+    {
+        "path": "system/board/ASRock_Rack_X570D4I/FAN2",
+        "endpoints": [
+            {
+                "types": {
+                    "rType": "inventory",
+                    "fType": "sensors"
+                },
+                "paths": [
+                    "/xyz/openbmc_project/sensors/fan_tach/FAN2"
+                ]
+            },
+            {
+                "types": {
+                    "rType": "fault_identified_by",
+                    "fType": "fault_identifying"
+                },
+                "paths": [
+                    "/xyz/openbmc_project/led/groups/fan2_fault"
+                ]
+            },
+            {
+                "types": {
+                    "rType": "cooled_by",
+                    "fType": "cooling"
+                },
+                "paths": [
+                    "/xyz/openbmc_project/inventory/system/board/ASRock_Rack_X570D4I"
+                ]
+            }
+        ]
+    },
+    {
+        "path": "system/board/ASRock_Rack_X570D4I/FAN3",
+        "endpoints": [
+            {
+                "types": {
+                    "rType": "inventory",
+                    "fType": "sensors"
+                },
+                "paths": [
+                    "/xyz/openbmc_project/sensors/fan_tach/FAN3"
+                ]
+            },
+            {
+                "types": {
+                    "rType": "fault_identified_by",
+                    "fType": "fault_identifying"
+                },
+                "paths": [
+                    "/xyz/openbmc_project/led/groups/fan3_fault"
+                ]
+            },
+            {
+                "types": {
+                    "rType": "cooled_by",
+                    "fType": "cooling"
+                },
+                "paths": [
+                    "/xyz/openbmc_project/inventory/system/board/ASRock_Rack_X570D4I"
+                ]
+            }
+        ]
+    }
+]

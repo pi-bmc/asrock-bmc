@@ -1,0 +1,60 @@
+From: Nick Atkins <nbatkins@gmail.com>
+Date: Sat, 9 Aug 2026 00:00:00 +0000
+Subject: [PATCH] fan: do not log an error when pwmN_enable is absent
+
+enablePwm() was added for I2C fan controllers such as the MAX31790, which
+boot into an automatic regulation mode and must be switched to manual by
+writing 1 to pwmN_enable before pwmN takes effect (commit abf91de1876,
+"FanSensor: Add initial of pwm enable file").
+
+Drivers whose PWM channels are always under direct control expose no
+pwmN_enable attribute at all. aspeed-pwm-tacho is one of them -- it
+registers only pwmN and fanN_input -- so on any AST2400/2500/2600 board
+that drives its fans from the SoC, every configured PWM channel logs
+
+    Error read/write '/sys/class/hwmon/hwmon0/pwmN_enable'
+
+once per config reload, forever. Nothing is actually wrong: the PWM is
+writable and the fan sensors come up normally, so the message is pure
+noise that masks real fan faults in the journal.
+
+Check for the file before opening it and return silently when it does not
+exist, which is exactly how enableFanInput() immediately below already
+handles a missing fanN_enable ("some drivers don't provide this file if
+the sensors are always enabled"). A file that exists but cannot be opened
+is still a genuine error and is still logged.
+
+Upstream-Status: Pending
+
+Signed-off-by: Nick Atkins <nbatkins@gmail.com>
+---
+ src/fan/FanMain.cpp | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/src/fan/FanMain.cpp b/src/fan/FanMain.cpp
+index c6a8f57e8..8b20d20a5 100644
+--- a/src/fan/FanMain.cpp
++++ b/src/fan/FanMain.cpp
+@@ -122,8 +122,22 @@ FanTypes getFanType(const std::filesystem::path& parentPath)
+
+     return FanTypes::i2c;
+ }
++// The argument to this function should be the pwmN_enable file for the PWM
++// channel we are about to drive. Some drivers do not provide this file because
++// their PWM channels are always under direct (manual) control and have no
++// automatic regulation mode to switch out of -- aspeed-pwm-tacho, used by every
++// AST2400/2500/2600 BMC that drives fans from the SoC, is one of them. That is
++// not an error, so treat a missing file the same way enableFanInput() below
++// treats a missing fanN_enable: silently do nothing.
+ void enablePwm(const std::filesystem::path& filePath)
+ {
++    std::error_code ec;
++    bool exists = std::filesystem::exists(filePath, ec);
++    if (ec || !exists)
++    {
++        return;
++    }
++
+     std::fstream enableFile(filePath, std::ios::in | std::ios::out);
+     if (!enableFile.good())
+     {

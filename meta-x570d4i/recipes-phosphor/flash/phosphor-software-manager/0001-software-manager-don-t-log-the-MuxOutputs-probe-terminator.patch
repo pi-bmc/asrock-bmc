@@ -1,0 +1,132 @@
+From: Nick Atkins <nbatkins@gmail.com>
+Date: Sat, 9 Aug 2026 00:00:00 +0000
+Subject: [PATCH] software-manager: don't log the MuxOutputs probe terminator
+
+The BIOS, CPLD and EEPROM managers all discover how many mux outputs a
+configuration declares by walking Foo.MuxOutputs0, MuxOutputs1, ... until
+one is missing:
+
+    for (size_t i = 0; true; i++) { ... if (!name || !polarity) break; }
+
+Both properties are fetched with dbusGetRequiredProperty(), which logs an
+error whenever the Get fails. The interface that ends the loop always
+fails, so every board with a MuxOutputs config emits two errors per scan
+naming an interface that was never supposed to exist:
+
+    Missing property Name on path .../HostSPIFlash, interface ...MuxOutputs1
+    Missing property Polarity on path .../HostSPIFlash, interface ...MuxOutputs1
+
+A correctly configured single-mux board therefore looks misconfigured.
+
+Add dbusGetOptionalProperty() for the case where absence is an expected
+answer, express dbusGetRequiredProperty() in terms of it so the logging
+behaviour of every other caller is untouched, and use the optional form
+for the three probe loops.
+
+Upstream-Status: Pending
+
+Signed-off-by: Nick Atkins <nbatkins@gmail.com>
+---
+diff --git a/bios/bios_software_manager.cpp b/bios/bios_software_manager.cpp
+index c441284c..c9cb4010 100644
+--- a/bios/bios_software_manager.cpp
++++ b/bios/bios_software_manager.cpp
+@@ -66,12 +66,14 @@ sdbusplus::async::task<bool> BIOSSoftwareManager::initDevice(
+     {
+         const std::string iface = configIfaceMux + std::to_string(i);
+ 
++        // The absent interface is how this loop terminates, so it must not be
++        // reported as a missing property.
+         std::optional<std::string> name =
+-            co_await dbusGetRequiredProperty<std::string>(ctx, service, path,
++            co_await dbusGetOptionalProperty<std::string>(ctx, service, path,
+                                                           iface, "Name");
+ 
+         std::optional<std::string> polarity =
+-            co_await dbusGetRequiredProperty<std::string>(ctx, service, path,
++            co_await dbusGetOptionalProperty<std::string>(ctx, service, path,
+                                                           iface, "Polarity");
+ 
+         if (!name.has_value() || !polarity.has_value())
+diff --git a/common/include/dbus_helper.hpp b/common/include/dbus_helper.hpp
+index e2e620ad..e4f1c5dd 100644
+--- a/common/include/dbus_helper.hpp
++++ b/common/include/dbus_helper.hpp
+@@ -8,8 +8,12 @@
+ 
+ PHOSPHOR_LOG2_USING;
+ 
++// Fetch a property without complaining when it is absent. Use this when a
++// missing property is an expected outcome rather than a fault -- most notably
++// when probing an open-ended series of interfaces (Foo0, Foo1, ...) where the
++// first absent one is simply how the caller learns it has reached the end.
+ template <typename T>
+-sdbusplus::async::task<std::optional<T>> dbusGetRequiredProperty(
++sdbusplus::async::task<std::optional<T>> dbusGetOptionalProperty(
+     sdbusplus::async::context& ctx, const std::string& service,
+     const std::string& path, const std::string& intf,
+     const std::string& property)
+@@ -27,6 +31,21 @@ sdbusplus::async::task<std::optional<T>> dbusGetRequiredProperty(
+         opt = std::get<T>(result);
+     }
+     catch (std::exception& e)
++    {
++        opt = std::nullopt;
++    }
++    co_return opt;
++}
++
++template <typename T>
++sdbusplus::async::task<std::optional<T>> dbusGetRequiredProperty(
++    sdbusplus::async::context& ctx, const std::string& service,
++    const std::string& path, const std::string& intf,
++    const std::string& property)
++{
++    std::optional<T> opt = co_await dbusGetOptionalProperty<T>(
++        ctx, service, path, intf, property);
++    if (!opt.has_value())
+     {
+         error("Missing property {PROPERTY} on path {PATH}, interface {INTF}",
+               "PROPERTY", property, "PATH", path, "INTF", intf);
+diff --git a/cpld/cpld_software_manager.cpp b/cpld/cpld_software_manager.cpp
+index b964906e..e0445e3a 100644
+--- a/cpld/cpld_software_manager.cpp
++++ b/cpld/cpld_software_manager.cpp
+@@ -47,12 +47,14 @@ sdbusplus::async::task<bool> CPLDSoftwareManager::initDevice(
+     {
+         const std::string iface = configIfaceMux + std::to_string(i);
+ 
++        // The absent interface is how this loop terminates, so it must not be
++        // reported as a missing property.
+         std::optional<std::string> name =
+-            co_await dbusGetRequiredProperty<std::string>(ctx, service, path,
++            co_await dbusGetOptionalProperty<std::string>(ctx, service, path,
+                                                           iface, "Name");
+ 
+         std::optional<std::string> polarity =
+-            co_await dbusGetRequiredProperty<std::string>(ctx, service, path,
++            co_await dbusGetOptionalProperty<std::string>(ctx, service, path,
+                                                           iface, "Polarity");
+ 
+         if (!name.has_value() || !polarity.has_value())
+diff --git a/eeprom-device/eeprom_device_software_manager.cpp b/eeprom-device/eeprom_device_software_manager.cpp
+index b2e9232d..6ee11135 100644
+--- a/eeprom-device/eeprom_device_software_manager.cpp
++++ b/eeprom-device/eeprom_device_software_manager.cpp
+@@ -142,12 +142,14 @@ sdbusplus::async::task<bool> EEPROMDeviceSoftwareManager::initDevice(
+     {
+         const std::string iface = configIfaceMux + std::to_string(i);
+ 
++        // The absent interface is how this loop terminates, so it must not be
++        // reported as a missing property.
+         std::optional<std::string> name =
+-            co_await dbusGetRequiredProperty<std::string>(ctx, service, path,
++            co_await dbusGetOptionalProperty<std::string>(ctx, service, path,
+                                                           iface, "Name");
+ 
+         std::optional<std::string> polarity =
+-            co_await dbusGetRequiredProperty<std::string>(ctx, service, path,
++            co_await dbusGetOptionalProperty<std::string>(ctx, service, path,
+                                                           iface, "Polarity");
+ 
+         if (!name.has_value() || !polarity.has_value())

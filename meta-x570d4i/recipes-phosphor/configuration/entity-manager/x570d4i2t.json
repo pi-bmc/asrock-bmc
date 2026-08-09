@@ -588,7 +588,7 @@
             {
                 "FirmwareInfo": {
                     "CompatibleHardware": "com.asrockrack.Hardware.X570D4I2T.SPI.Host",
-                    "VendorIANA": 0
+                    "VendorIANA": 49622
                 },
                 "MuxOutputs": [
                     {
@@ -599,7 +599,7 @@
                 "Name": "HostSPIFlash",
                 "SPIControllerIndex": 1,
                 "SPIDeviceIndex": 0,
-                "Type": "SPIFlash"
+                "Type": "HostSPIFlash"
             }
         ],
         "Name": "ASRock Rack X570D4I",
@@ -609,11 +609,7 @@
             "BuildDate": "$BOARD_MANUFACTURE_DATE",
             "Manufacturer": "$BOARD_MANUFACTURER",
             "Model": "$BOARD_PRODUCT_NAME",
-            "PartNumber": "$BOARD_PART_NUMBER",
             "SerialNumber": "$BOARD_SERIAL_NUMBER"
-        },
-        "xyz.openbmc_project.Inventory.Decorator.AssetTag": {
-            "AssetTag": "$PRODUCT_ASSET_TAG"
         },
         "xyz.openbmc_project.Inventory.Item.System": {}
     },
