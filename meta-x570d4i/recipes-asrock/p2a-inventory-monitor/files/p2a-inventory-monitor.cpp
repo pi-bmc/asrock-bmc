@@ -374,7 +374,8 @@ class Monitor
             const auto* h =
                 reinterpret_cast<const OOB_INV_HEADER*>(cached.data());
             lastCrc = h->Crc32;
-            rebuild(cached);
+            lastBlob = cached;
+            rebuild(lastBlob);
             published = true;
         }
 
@@ -470,7 +471,18 @@ class Monitor
                             p.substr(slash + 1) == kBoardName)
                         {
                             boardPath = p;
-                            lastCrc = 0; // force a rebuild so associations land
+                            // Re-publish immediately so the chassis->drive
+                            // association lands on inventory that was already
+                            // built without it. This matters most on the cache
+                            // path: startup publishes before the mapper has
+                            // answered, and with the host powered off no DRAM
+                            // refresh will ever come along to fix it up — which
+                            // would leave /Chassis/<id>/Drives empty while
+                            // /Systems/system/Storage looked fine.
+                            if (!lastBlob.empty())
+                            {
+                                rebuild(lastBlob);
+                            }
                             return;
                         }
                     }
@@ -505,12 +517,13 @@ class Monitor
             auto* h = reinterpret_cast<const OOB_INV_HEADER*>(buf.data());
             if (h->Crc32 != lastCrc)
             {
-                rebuild(buf);
+                lastBlob = buf;
+                rebuild(lastBlob);
                 lastCrc = h->Crc32;
                 published = true;
                 // Persist only what we have actually published, so the cache
                 // can never describe something Redfish never served.
-                saveCache(buf);
+                saveCache(lastBlob);
             }
         }
 
@@ -827,6 +840,10 @@ class Monitor
     std::unique_ptr<sdbusplus::bus::match_t> hostMatch;
 
     std::string boardPath;
+    // The blob backing what is currently published, kept so late-arriving
+    // context (the chassis path from the mapper) can be folded in by
+    // re-publishing without waiting for the host to push again.
+    std::vector<std::uint8_t> lastBlob;
     bool hostRunning = false;
     bool published = false;
     std::uint32_t lastCrc = 0;
