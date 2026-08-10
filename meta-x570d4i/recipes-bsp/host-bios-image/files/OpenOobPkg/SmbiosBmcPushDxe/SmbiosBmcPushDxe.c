@@ -361,6 +361,162 @@ WriteSm3Ep (UINT8 *p, UINT32 TableLen, UINT8 Maj, UINT8 Min)
   p[16]=0; p[17]=0; p[18]=0; p[19]=0; p[20]=0; p[21]=0; p[22]=0; p[23]=0;
 }
 
+/* ---------------------------------------------------------------------------
+   Type 17 Device Locator normalisation
+   ---------------------------------------------------------------------------
+
+   smbios-mdr keys memoryLocationTable.json on the Type 17 Device Locator ALONE
+   (dimm.cpp: data.find(deviceLocator)), which assumes that string is unique
+   across the board. This BIOS numbers slots per bank instead:
+
+       Bank Locator     Device Locator
+       P0 CHANNEL A     DIMM 0
+       P0 CHANNEL A     DIMM 1
+       P0 CHANNEL B     DIMM 0
+       P0 CHANNEL B     DIMM 1
+
+   so four slots collapse onto two keys and channel B cannot be given its own
+   Channel value -- dimm.cpp then zeroes Socket/MemoryController/Slot/Channel on
+   whichever pair loses and logs "Failed find the corresponding table".
+
+   Rewrite the Device Locator to a unique "DIMM_<channel><slot>" while copying
+   the table, so the stock upstream lookup resolves all four slots. This
+   replaces a local smbios-mdr patch that taught dimm.cpp to match on the
+   fully-qualified "<bank> <device>" string: fixing the data at the producer
+   keeps the BMC side stock, and the BMC is the harder half to carry patches on.
+
+   Only the copy pushed to the BMC is touched. Paths B and C read the firmware's
+   table but CopyMem it into our buffer first, and path A reassembles from
+   EFI_SMBIOS_PROTOCOL, so the table the host OS itself consumes is untouched --
+   dmidecode under Linux still shows the vendor's original naming.
+
+   The Bank Locator is deliberately left alone. dimm.cpp publishes
+   MemoryDeviceLocator/LocationCode as "<bank> <device>" when a bank exists, so
+   keeping it preserves the physical channel in the Redfish location string. */
+
+#define SMBIOS_TYPE_MEMORY_DEVICE 17
+#define T17_DEVICE_LOCATOR_OFF    0x10   /* string number */
+#define T17_BANK_LOCATOR_OFF      0x11   /* string number */
+
+/* Slack for the rewrite: the new name can be longer than the original. Bounded
+   by (max DIMM slots) * (max name growth); 512 is far past what any SO-DIMM
+   board needs and the writer bound-checks anyway. */
+#define DIMM_REWRITE_SLACK        512u
+
+/* Return the Num'th (1-based) string of an SMBIOS record, or NULL when the
+   record has no such string. Num == 0 means "no string" per the spec. */
+STATIC CONST CHAR8 *
+SmbiosString (UINT8 *Rec, UINT8 Num)
+{
+  CHAR8 *p = (CHAR8 *)(Rec + Rec[1]);
+
+  if (Num == 0 || *p == 0) {
+    return NULL;                       /* unset, or record has no string set */
+  }
+  while (--Num) {
+    while (*p) p++;
+    p++;
+    if (*p == 0) {
+      return NULL;                     /* ran past the end of the string set */
+    }
+  }
+  return p;
+}
+
+/* Derive "DIMM_A0" from bank "P0 CHANNEL A" + device "DIMM 0".
+
+   The channel is the last A-Z in the bank locator and the slot is the last
+   digit in the device locator, which is what makes this survive the vendor
+   renaming "P0 CHANNEL A" to "CHANNEL A" or "DIMM 0" to "DIMM0" -- neither
+   moves the characters we key on. Returns FALSE if either cannot be found, in
+   which case the caller leaves the record exactly as the BIOS emitted it. */
+STATIC BOOLEAN
+MakeDimmName (CONST CHAR8 *Bank, CONST CHAR8 *Dev, CHAR8 *Out, UINTN OutSz)
+{
+  CHAR8 Chan = 0, Slot = 0;
+  UINTN i;
+
+  if (Bank == NULL || Dev == NULL || OutSz < 8) {
+    return FALSE;
+  }
+  for (i = AsciiStrLen (Bank); i > 0; i--) {
+    if (Bank[i - 1] >= 'A' && Bank[i - 1] <= 'Z') { Chan = Bank[i - 1]; break; }
+  }
+  for (i = AsciiStrLen (Dev); i > 0; i--) {
+    if (Dev[i - 1] >= '0' && Dev[i - 1] <= '9') { Slot = Dev[i - 1]; break; }
+  }
+  if (Chan == 0 || Slot == 0) {
+    return FALSE;
+  }
+  Out[0] = 'D'; Out[1] = 'I'; Out[2] = 'M'; Out[3] = 'M'; Out[4] = '_';
+  Out[5] = Chan; Out[6] = Slot; Out[7] = 0;
+  return TRUE;
+}
+
+/* Copy the structure table from Src to Dst, substituting the Device Locator
+   string of every Type 17 record. Returns bytes written, or 0 if the output
+   did not fit -- the caller then ships the original table unmodified, because a
+   board with imperfect DIMM location data is worth far more than no SMBIOS at
+   all. String NUMBERS are preserved (we swap a string in place within the
+   set), so every other field's string references stay valid. */
+STATIC UINT32
+RewriteDimmLocators (UINT8 *Src, UINT32 SrcLen, UINT8 *Dst, UINT32 DstMax)
+{
+  UINT8 *s = Src, *fence = Src + SrcLen;
+  UINT32 o = 0;
+
+  while (s + 4 <= fence) {
+    UINT32 rl = SmbiosRecLen (s);
+    UINT8  fmtLen = s[1];
+    CHAR8  NameBuf[16];
+    CONST CHAR8 *NewName = NULL;
+    UINT8  DevNum = 0;
+    CHAR8 *p;
+    UINT8  n;
+
+    if (fmtLen < 4 || s + rl > fence) {
+      break;
+    }
+
+    if (s[0] == SMBIOS_TYPE_MEMORY_DEVICE && fmtLen > T17_BANK_LOCATOR_OFF) {
+      DevNum = s[T17_DEVICE_LOCATOR_OFF];
+      if (MakeDimmName (SmbiosString (s, s[T17_BANK_LOCATOR_OFF]),
+                        SmbiosString (s, DevNum),
+                        NameBuf, sizeof (NameBuf))) {
+        NewName = NameBuf;
+      }
+    }
+
+    if (o + fmtLen > DstMax) return 0;
+    CopyMem (Dst + o, s, fmtLen);
+    o += fmtLen;
+
+    p = (CHAR8 *)(s + fmtLen);
+    if (*p == 0) {
+      /* No strings: the set is just the terminating double NUL. */
+      if (o + 2 > DstMax) return 0;
+      Dst[o++] = 0; Dst[o++] = 0;
+    } else {
+      for (n = 1; *p; n++) {
+        CONST CHAR8 *emit = (NewName != NULL && n == DevNum) ? NewName : p;
+        UINTN el = AsciiStrLen (emit);
+        if (o + el + 1 > DstMax) return 0;
+        CopyMem (Dst + o, emit, el);
+        o += (UINT32)el;
+        Dst[o++] = 0;
+        while (*p) p++;
+        p++;
+      }
+      if (o + 1 > DstMax) return 0;
+      Dst[o++] = 0;                    /* end of string set */
+    }
+
+    s += rl;
+  }
+
+  return o;
+}
+
 /* Build [SMBIOS structure table (Type 0 .. Type 127)][synthesized "_SM3_"
    entry point AT THE END].  This exact layout is required by smbios-mdr:
    - its structure walk (getSMBIOSTypePtr) starts at byte 0, so the table MUST
@@ -378,12 +534,13 @@ WriteSm3Ep (UINT8 *p, UINT32 TableLen, UINT8 Maj, UINT8 Min)
 STATIC EFI_STATUS
 BuildBlob (UINT8 **Out, UINT32 *OutLen)
 {
-  UINT8    *tbl = NULL;
+  UINT8    *tbl = NULL;      /* raw structure table; may point into FW memory */
+  UINT8    *tmp = NULL;      /* our own copy, when a path had to assemble one */
   UINT32    total = 0;
   UINT8     maj = 3, min = 3;
   CONST UINT32 epLen = 24;
   UINT8    *b;
-  UINT32    off;
+  UINT32    off, cap, outTotal;
 
   /* --- Path A: EFI_SMBIOS_PROTOCOL (fast, early, works at EndOfDxe) --- */
   EFI_SMBIOS_PROTOCOL    *Smbios = NULL;
@@ -399,36 +556,44 @@ BuildBlob (UINT8 **Out, UINT32 *OutLen)
     if (total && cnt) {
       maj = Smbios->MajorVersion; min = Smbios->MinorVersion;
       if (maj != 3 || min == 1) { maj = 3; min = 3; }
-      b = AllocatePool (total + epLen);
-      if (!b) return EFI_OUT_OF_RESOURCES;
+      /* Assemble the contiguous table first; the Device Locator rewrite and the
+         entry point are appended by the common tail shared with paths B and C. */
+      tmp = AllocatePool (total);
+      if (!tmp) return EFI_OUT_OF_RESOURCES;
       off = 0;
       h = SMBIOS_HANDLE_PI_RESERVED;
       while (Smbios->GetNext (Smbios, &h, NULL, &rec, NULL) == EFI_SUCCESS) {
         UINT32 l = SmbiosRecLen ((UINT8 *)rec);
-        CopyMem (b + off, rec, l); off += l;
+        /* Bounded by the count pass above. The two walks should agree, but a
+           record appearing between them must truncate rather than overrun. */
+        if (off + l > total) break;
+        CopyMem (tmp + off, rec, l); off += l;
       }
-      WriteSm3Ep (b + total, total, maj, min);
-      *Out = b; *OutLen = total + epLen;
-      return EFI_SUCCESS;
+      total = off;
+      tbl = tmp;
+    } else {
+      total = 0;             /* protocol present but empty -- try B and C */
     }
   }
 
   /* --- Path B: SMBIOS3 configuration table (always valid at ReadyToBoot) --- */
-  for (UINTN i = 0; i < gST->NumberOfTableEntries; i++) {
-    if (CompareGuid (&gST->ConfigurationTable[i].VendorGuid, &mSmbios3TableGuid)) {
-      UINT8 *ep = (UINT8 *)gST->ConfigurationTable[i].VendorTable;
-      /* Validate anchor and entry-point length */
-      if (ep[0]!='_'||ep[1]!='S'||ep[2]!='M'||ep[3]!='3'||ep[4]!='_'||ep[6]!=24)
-        continue;
-      UINT32 maxSz; CopyMem (&maxSz, ep + 12, 4);
-      UINT64 addr;  CopyMem (&addr,  ep + 16, 8);
-      tbl = (UINT8 *)(UINTN)addr;
-      if (!tbl || !maxSz) continue;
-      total = RawTableLen (tbl, maxSz);
-      if (!total) continue;
-      maj = ep[7]; min = ep[8];
-      if (maj != 3 || min == 1) { maj = 3; min = 3; }
-      break;
+  if (!total || !tbl) {
+    for (UINTN i = 0; i < gST->NumberOfTableEntries; i++) {
+      if (CompareGuid (&gST->ConfigurationTable[i].VendorGuid, &mSmbios3TableGuid)) {
+        UINT8 *ep = (UINT8 *)gST->ConfigurationTable[i].VendorTable;
+        /* Validate anchor and entry-point length */
+        if (ep[0]!='_'||ep[1]!='S'||ep[2]!='M'||ep[3]!='3'||ep[4]!='_'||ep[6]!=24)
+          continue;
+        UINT32 maxSz; CopyMem (&maxSz, ep + 12, 4);
+        UINT64 addr;  CopyMem (&addr,  ep + 16, 8);
+        tbl = (UINT8 *)(UINTN)addr;
+        if (!tbl || !maxSz) continue;
+        total = RawTableLen (tbl, maxSz);
+        if (!total) continue;
+        maj = ep[7]; min = ep[8];
+        if (maj != 3 || min == 1) { maj = 3; min = 3; }
+        break;
+      }
     }
   }
   /* --- Path C: SMBIOS2 configuration table (gEfiSmbiosTableGuid "_SM_") ---
@@ -456,13 +621,30 @@ BuildBlob (UINT8 **Out, UINT32 *OutLen)
     }
   }
 
-  if (!total || !tbl) return EFI_NOT_FOUND;
+  if (!total || !tbl) {
+    if (tmp) FreePool (tmp);
+    return EFI_NOT_FOUND;
+  }
 
-  b = AllocatePool (total + epLen);
-  if (!b) return EFI_OUT_OF_RESOURCES;
-  CopyMem (b, tbl, total);
-  WriteSm3Ep (b + total, total, maj, min);
-  *Out = b; *OutLen = total + epLen;
+  /* Common tail: normalise Type 17 Device Locators, then append the entry
+     point. Sized for the rewrite growing the table; if it somehow does not fit,
+     RewriteDimmLocators returns 0 and we ship the table verbatim rather than
+     lose the push entirely. */
+  cap = total + DIMM_REWRITE_SLACK;
+  b = AllocatePool (cap + epLen);
+  if (!b) {
+    if (tmp) FreePool (tmp);
+    return EFI_OUT_OF_RESOURCES;
+  }
+  outTotal = RewriteDimmLocators (tbl, total, b, cap);
+  if (outTotal == 0) {
+    CopyMem (b, tbl, total);
+    outTotal = total;
+  }
+  if (tmp) FreePool (tmp);
+
+  WriteSm3Ep (b + outTotal, outTotal, maj, min);
+  *Out = b; *OutLen = outTotal + epLen;
   return EFI_SUCCESS;
 }
 

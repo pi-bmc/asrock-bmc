@@ -27,15 +27,23 @@ PACKAGECONFIG:append = " smbios-ipmi-blob"
 # SO-DIMM slots are listed; values map to the Socket / MemoryController /
 # Channel / Slot fields for Redfish/IPMI DIMM info.
 #
-# Keys are the fully-qualified "<bank locator> <device locator>" strings, which
-# requires 0003 below. Upstream keys this table on the SMBIOS Type 17 *Device
-# Locator* alone, but this board's BIOS numbers slots per bank and reports
-# device locators "DIMM 0" / "DIMM 1" under BOTH banks ("P0 CHANNEL A" and
-# "P0 CHANNEL B"), so all four slots collapse onto two keys and channel B
-# cannot be given its own Channel value. Confirmed on the live board: the four
-# dimm objects publish MemoryDeviceLocator "P0 CHANNEL A DIMM 0/1" and
-# "P0 CHANNEL B DIMM 0/1". A key that matches nothing makes dimm.cpp log
-# "Failed find the corresponding table for dimm ..." and zero all four fields.
+# Keys are the SMBIOS Type 17 *Device Locator* alone, which is what upstream
+# dimm.cpp looks up (data.find(deviceLocator)) -- no patch required.
+#
+# That works because the locators are made unique on the HOST side before the
+# table is ever pushed. This BIOS numbers slots per bank, reporting "DIMM 0" /
+# "DIMM 1" under BOTH "P0 CHANNEL A" and "P0 CHANNEL B", so all four slots
+# would otherwise collapse onto two keys and channel B could not be given its
+# own Channel value. SmbiosBmcPushDxe rewrites each Type 17 Device Locator to
+# "DIMM_<channel><slot>" (DIMM_A0/A1/B0/B1) while building the blob it pushes;
+# see the Type 17 normalisation block in
+# recipes-bsp/host-bios-image/files/OpenOobPkg/SmbiosBmcPushDxe/SmbiosBmcPushDxe.c.
+# Only the pushed copy is rewritten -- the host OS still sees the vendor's
+# original naming in dmidecode.
+#
+# Keep these keys in step with MakeDimmName() in that file. A key that matches
+# nothing makes dimm.cpp log "Failed find the corresponding table for dimm ..."
+# and zero all four fields.
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI:append = " file://memoryLocationTable.json"
 
@@ -51,11 +59,6 @@ SRC_URI:append = " file://0001-smbios-blob-stat-persisted-file.patch"
 # propagates the SMBIOS BIOS version to /xyz/openbmc_project/software/bios_active,
 # which this board doesn't have (its BIOS is a HostSPIFlash code-update object).
 SRC_URI:append = " file://0002-quiet-optional-bios-active-lookup.patch"
-
-# Look the memoryLocationTable up by the full "<bank> <device>" locator, falling
-# back to the bare device locator. Required for this board's per-bank DIMM
-# numbering — see the memoryLocationTable comment above.
-SRC_URI:append = " file://0003-dimm-match-full-bank-device-locator.patch"
 
 # Stop the Inventory-anchor startup race being logged as three errors per boot.
 # smbios-mdr starts before entity-manager has published the board object (~25s

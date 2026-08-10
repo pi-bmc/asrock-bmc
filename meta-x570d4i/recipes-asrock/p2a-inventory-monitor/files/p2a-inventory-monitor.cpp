@@ -36,13 +36,17 @@
 #include <sdbusplus/bus/match.hpp>
 
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <functional>
 #include <limits>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -93,6 +97,11 @@ constexpr const char* kBoardName = "ASRock_Rack_X570D4I";
 
 constexpr int kPollSeconds = 5;
 constexpr int kResolveRetrySeconds = 10;
+
+// Trimmed hwdata pci.ids, installed by this recipe. Absence is tolerated: names
+// simply stay empty and the raw ids are published instead.
+constexpr const char* kPciIdsPath =
+    "/usr/share/p2a-inventory-monitor/pci.ids";
 
 // -------- blob validation --------
 
@@ -311,6 +320,195 @@ std::string hex8(std::uint8_t v)
     std::snprintf(b, sizeof(b), "0x%02x", v);
     return b;
 }
+
+// PCI base class -> Redfish PCIeFunction DeviceClass enum value.
+//
+// bmcweb copies Function0DeviceClass into the Redfish payload VERBATIM -- it
+// only checks the string is non-empty (redfish-core/lib/pcie.hpp, which still
+// carries a TODO about mapping these properly) -- exactly as it already does
+// for Function0FunctionType. So this must return the BARE Redfish enum value
+// ("DisplayController"), not a fully-qualified D-Bus enum path. Returning the
+// latter would put a non-schema string straight into the response.
+//
+// The mapping is 1:1 with the PCI-SIG base class byte, which is also what the
+// "C xx" class section of pci.ids enumerates -- Redfish's enum was named from
+// it, so every base class the host can report has an exact counterpart.
+std::string deviceClassRedfish(std::uint8_t base, std::uint8_t sub)
+{
+    switch (base)
+    {
+        case 0x00: return "UnclassifiedDevice";
+        case 0x01: return "MassStorageController";
+        case 0x02: return "NetworkController";
+        case 0x03: return "DisplayController";
+        case 0x04: return "MultimediaController";
+        case 0x05: return "MemoryController";
+        case 0x06: return "Bridge";
+        case 0x07: return "CommunicationController";
+        case 0x08: return "GenericSystemPeripheral";
+        case 0x09: return "InputDeviceController";
+        case 0x0a: return "DockingStation";
+        // The one place the subclass matters: PCI puts co-processors under
+        // base class 0x0b subclass 0x40, and Redfish has a distinct
+        // Coprocessor value for exactly that.
+        case 0x0b: return sub == 0x40 ? "Coprocessor" : "Processor";
+        case 0x0c: return "SerialBusController";
+        case 0x0d: return "WirelessController";
+        case 0x0e: return "IntelligentController";
+        case 0x0f: return "SatelliteCommunicationsController";
+        case 0x10: return "EncryptionController";
+        case 0x11: return "SignalProcessingController";
+        case 0x12: return "ProcessingAccelerators";
+        case 0x13: return "NonEssentialInstrumentation";
+        case 0x40: return "Coprocessor";
+        case 0xff: return "UnassignedClass";
+        default: return "Other";
+    }
+}
+
+// Vendor/device name resolution against a pci.ids table.
+//
+// The installed file is stock hwdata pci.ids with the subsystem lines and the
+// class section stripped at build time (see the recipe): ~900 KB of
+// "vvvv  Vendor name" lines, each followed by tab-indented "dddd  Device name"
+// lines. Full hwdata is deliberately NOT installed -- it also ships usb.ids and
+// the ~5 MB oui.txt, and this board's 32 MiB rofs has no room to spare.
+//
+// Lookup is one linear scan per publish, filtered to the ids actually present,
+// rather than a map parsed up front: a publish happens only when the host
+// pushes a new blob, while a full table is ~40k entries that would sit resident
+// for a daemon which otherwise idles.
+class PciIdDb
+{
+  public:
+    struct Names
+    {
+        std::string vendor;
+        std::string device;
+    };
+
+    // Fold a (vendor, device) pair into one lookup word.
+    static constexpr std::uint32_t key(std::uint16_t ven, std::uint16_t dev)
+    {
+        return (static_cast<std::uint32_t>(ven) << 16) | dev;
+    }
+
+    // Resolve every requested pair in a single pass. A missing file, an unknown
+    // vendor and an unknown device are all non-errors: each just leaves the
+    // corresponding string empty and the caller falls back to raw hex, which is
+    // what this daemon published before names existed.
+    static std::map<std::uint32_t, Names>
+        resolve(const std::set<std::uint32_t>& wanted, const char* path)
+    {
+        std::map<std::uint32_t, Names> out;
+        std::ifstream in(path);
+        if (!in)
+        {
+            return out;
+        }
+
+        // Vendors owning at least one wanted pair, so a vendor name is still
+        // captured when the device id itself is absent from the table.
+        std::set<std::uint16_t> vendors;
+        for (auto k : wanted)
+        {
+            vendors.insert(static_cast<std::uint16_t>(k >> 16));
+        }
+
+        std::string line;
+        std::uint16_t curVendor = 0;
+        bool curWanted = false;
+
+        while (std::getline(in, line))
+        {
+            if (line.empty() || line[0] == '#')
+            {
+                continue;
+            }
+            // The class section ("C 03  Display controller") reuses the same
+            // one-tab indentation for its subclasses, so parsing past it would
+            // file class names as device names. It is last in the file, and the
+            // build-time filter drops it, but stop here regardless so this also
+            // works against an untrimmed pci.ids.
+            if (line[0] == 'C' && line.size() > 1 && line[1] == ' ')
+            {
+                break;
+            }
+
+            if (line[0] != '\t')
+            {
+                curVendor = parseHex16(line, 0);
+                curWanted = vendors.count(curVendor) != 0;
+                if (curWanted)
+                {
+                    // Seed every wanted pair belonging to this vendor, so a
+                    // device the table does not list still gets a vendor name.
+                    const std::string vname = nameAfterId(line, 0);
+                    for (auto k : wanted)
+                    {
+                        if (static_cast<std::uint16_t>(k >> 16) == curVendor)
+                        {
+                            out[k].vendor = vname;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // Subsystem line, or a vendor with nothing wanted under it.
+            if (!curWanted || line.size() < 2 || line[1] == '\t')
+            {
+                continue;
+            }
+
+            auto it = out.find(key(curVendor, parseHex16(line, 1)));
+            if (it != out.end())
+            {
+                it->second.device = nameAfterId(line, 1);
+            }
+        }
+        return out;
+    }
+
+  private:
+    // Parse the hex id starting at `off`; 0 on anything malformed, which then
+    // simply fails to match a wanted key.
+    static std::uint16_t parseHex16(const std::string& s, std::size_t off)
+    {
+        std::uint32_t v = 0;
+        std::size_t i = off;
+        for (; i < s.size() && std::isxdigit(static_cast<unsigned char>(s[i]));
+             i++)
+        {
+            const char c = s[i];
+            const std::uint32_t d =
+                (c <= '9') ? static_cast<std::uint32_t>(c - '0')
+                           : static_cast<std::uint32_t>((c | 0x20) - 'a' + 10);
+            v = (v << 4) | d;
+        }
+        return (i == off) ? 0 : static_cast<std::uint16_t>(v);
+    }
+
+    // The name is whatever follows the id and its separating whitespace.
+    static std::string nameAfterId(const std::string& s, std::size_t off)
+    {
+        std::size_t i = off;
+        while (i < s.size() && std::isxdigit(static_cast<unsigned char>(s[i])))
+        {
+            i++;
+        }
+        while (i < s.size() && (s[i] == ' ' || s[i] == '\t'))
+        {
+            i++;
+        }
+        std::string n = s.substr(i);
+        while (!n.empty() && (n.back() == ' ' || n.back() == '\r'))
+        {
+            n.pop_back();
+        }
+        return n;
+    }
+};
 
 // Holds every interface published for the current blob so a refresh can tear
 // them all down and rebuild.
@@ -548,6 +746,19 @@ class Monitor
             buf.data() + sizeof(OOB_INV_HEADER) +
             static_cast<std::size_t>(h->PcieCount) * sizeof(OOB_INV_PCIE_RECORD));
 
+        // Resolve every vendor/device name the blob refers to in one pass, up
+        // front: both the PCIe objects and the drives synthesized from PCIe
+        // functions read the result, and doing it per-record would re-scan the
+        // ~900 KB table 49 times.
+        {
+            std::set<std::uint32_t> wanted;
+            for (std::uint16_t i = 0; i < h->PcieCount; i++)
+            {
+                wanted.insert(PciIdDb::key(pcie[i].VendorId, pcie[i].DeviceId));
+            }
+            pciNames = PciIdDb::resolve(wanted, kPciIdsPath);
+        }
+
         // One Storage subsystem object so the collection is non-empty.
         pub.add(kStoragePath, "xyz.openbmc_project.Inventory.Item.Storage")
             ->initialize();
@@ -609,7 +820,12 @@ class Monitor
                       p.Function);
         const std::string id = "nvme" + std::to_string(idx);
         const std::string path = std::string(kStoragePath) + "/" + id;
-        const std::string model = hex16(p.VendorId) + ":" + hex16(p.DeviceId);
+        // The controller's PCI ids are all we have here (no Identify data), so
+        // name it from the same table the PCIe objects use.
+        const auto n = namesFor(p);
+        const std::string model =
+            n.device.empty() ? hex16(p.VendorId) + ":" + hex16(p.DeviceId)
+                             : n.device;
 
         {
             auto drive =
@@ -629,12 +845,16 @@ class Monitor
         }
         {
             auto item = pub.add(path, "xyz.openbmc_project.Inventory.Item");
+            // The resolved name already says what this is ("NVMe SSD
+            // Controller PM9C1a"), so prefixing it would stutter; only the
+            // bare-ids fallback needs the "NVMe" qualifier and the location.
             item->register_property<std::string>(
-                "PrettyName", std::string("NVMe ") + loc);
+                "PrettyName",
+                n.device.empty() ? (std::string("NVMe ") + loc) : model);
             item->register_property("Present", true);
             item->initialize();
         }
-        addAsset(path, model, "");
+        addAsset(path, model, "", n.vendor);
 
         if (!boardPath.empty())
         {
@@ -659,7 +879,7 @@ class Monitor
             item->register_property("Present", true);
             item->initialize();
         }
-        addAsset(cpath, model, "");
+        addAsset(cpath, model, "", n.vendor);
     }
 
     void publishDrive(std::uint16_t idx, const OOB_INV_DRIVE_RECORD& d)
@@ -802,7 +1022,9 @@ class Monitor
             dev->register_property<std::string>("Function0ClassCode", classCode);
             dev->register_property<std::string>("Function0RevisionId",
                                                 hex8(p.RevisionId));
-            dev->register_property<std::string>("Function0DeviceClass", "");
+            dev->register_property<std::string>(
+                "Function0DeviceClass",
+                deviceClassRedfish(p.ClassBase, p.ClassSub));
             dev->register_property<std::string>("Function0FunctionType",
                                                 p.Function == 0 ? "Physical"
                                                                 : "Virtual");
@@ -810,19 +1032,57 @@ class Monitor
         }
         {
             auto item = pub.add(path, "xyz.openbmc_project.Inventory.Item");
-            item->register_property<std::string>("PrettyName", loc);
+            item->register_property<std::string>("PrettyName",
+                                                 prettyNameFor(p, loc));
             item->register_property("Present", true);
             item->initialize();
         }
-        addAsset(path, hex16(p.VendorId) + ":" + hex16(p.DeviceId), "");
+        // Model carries the device name when the table knows it; the numeric
+        // ids are not lost, they remain as Function0VendorId/Function0DeviceId
+        // on this object and on the Redfish PCIeFunction.
+        const auto n = namesFor(p);
+        addAsset(path,
+                 n.device.empty() ? hex16(p.VendorId) + ":" + hex16(p.DeviceId)
+                                  : n.device,
+                 "", n.vendor);
+    }
+
+    // Names for a PCIe record, empty-filled when the table had no match.
+    PciIdDb::Names namesFor(const OOB_INV_PCIE_RECORD& p) const
+    {
+        auto it = pciNames.find(PciIdDb::key(p.VendorId, p.DeviceId));
+        return (it == pciNames.end()) ? PciIdDb::Names{} : it->second;
+    }
+
+    // "NVIDIA Corporation GK210GL [Tesla K80]" when both halves resolved,
+    // degrading to whichever half did, and finally to the caller's fallback
+    // (the BDF location) so this is never empty.
+    std::string prettyNameFor(const OOB_INV_PCIE_RECORD& p,
+                              const std::string& fallback) const
+    {
+        const auto n = namesFor(p);
+        if (!n.vendor.empty() && !n.device.empty())
+        {
+            return n.vendor + " " + n.device;
+        }
+        if (!n.device.empty())
+        {
+            return n.device;
+        }
+        if (!n.vendor.empty())
+        {
+            return n.vendor + " " + hex16(p.DeviceId);
+        }
+        return fallback;
     }
 
     void addAsset(const std::string& path, const std::string& model,
-                  const std::string& serial)
+                  const std::string& serial,
+                  const std::string& manufacturer = "")
     {
         auto asset =
             pub.add(path, "xyz.openbmc_project.Inventory.Decorator.Asset");
-        asset->register_property<std::string>("Manufacturer", "");
+        asset->register_property<std::string>("Manufacturer", manufacturer);
         asset->register_property<std::string>("Model", model);
         asset->register_property<std::string>("SerialNumber", serial);
         asset->register_property<std::string>("PartNumber", "");
@@ -840,6 +1100,8 @@ class Monitor
     std::unique_ptr<sdbusplus::bus::match_t> hostMatch;
 
     std::string boardPath;
+    // Vendor/device names for the ids in `lastBlob`, resolved once per rebuild.
+    std::map<std::uint32_t, PciIdDb::Names> pciNames;
     // The blob backing what is currently published, kept so late-arriving
     // context (the chassis path from the mapper) can be folded in by
     // re-publishing without waiting for the host to push again.
