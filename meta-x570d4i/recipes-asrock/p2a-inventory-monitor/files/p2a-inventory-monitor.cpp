@@ -19,6 +19,12 @@
 // state — inventory is exposed only while the host is Running and cleared when it
 // powers off — and additionally re-read whenever the blob's CRC changes.
 //
+// This daemon also publishes the host's onboard NIC MACs as
+// Inventory.Item.NetworkInterface objects, read from the board FRU EEPROM (see
+// the host-NIC section below). Those are BMC-local facts, independent of the
+// P2A blob and of host power, and back bmcweb's Systems EthernetInterfaces
+// routes (bmcweb layer patch 0004).
+//
 // Copyright (c) 2026, ASRock Rack X570D4I-2T OpenBMC port.
 
 #include "oob-inventory-blob.h"
@@ -35,6 +41,7 @@
 #include <sdbusplus/asio/object_server.hpp>
 #include <sdbusplus/bus/match.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <chrono>
@@ -509,6 +516,111 @@ class PciIdDb
         return n;
     }
 };
+
+// -------- host NIC inventory from the board EEPROM --------
+//
+// The host's two onboard X550-AT2 10GbE MACs are provisioned in the same FRU
+// EEPROM the BMC's own MACs come from (i2c7/0x57; the DTS taps 0x3F80/0x3F88
+// as nvmem cells for the BMC's eth0/eth1). Four entries sit at 8-byte stride
+// from 0x3F80 — BMC dedicated, BMC NC-SI shared, host LAN1, host LAN2 — each
+// 6 MAC bytes plus a checksum byte chosen so all 7 sum to 0 mod 256. Verified
+// on hardware 2026-08-30: the 0x3F90/0x3F98 entries are the MACs this host's
+// X550 ports PXE-boot with.
+//
+// Unlike everything else this daemon serves, these are BMC-local facts about
+// installed hardware, so they are published unconditionally — host on, off, or
+// never yet booted — and are never torn down. bmcweb's Systems
+// EthernetInterfaces routes (layer patch 0004) render them at
+// /redfish/v1/Systems/system/EthernetInterfaces, which is where
+// Metal3/Ironic-style provisioning discovers a machine's boot MACs.
+constexpr const char* kMacEeprom = "/sys/bus/i2c/devices/7-0057/eeprom";
+constexpr const char* kNicRoot =
+    "/xyz/openbmc_project/inventory/system/network";
+
+// Read one 7-byte EEPROM MAC entry at `offset`. False (and no publication) on
+// a short read, a checksum mismatch, an unprogrammed all-zero entry, or a
+// non-unicast first byte — an erased-flash 0xFF entry fails the checksum.
+bool readEepromMac(int fd, off_t offset, std::array<std::uint8_t, 6>& mac)
+{
+    std::array<std::uint8_t, 7> e{};
+    if (::pread(fd, e.data(), e.size(), offset) !=
+        static_cast<ssize_t>(e.size()))
+    {
+        return false;
+    }
+    std::uint8_t sum = 0;
+    bool allZero = true;
+    for (std::size_t i = 0; i < e.size(); i++)
+    {
+        sum = static_cast<std::uint8_t>(sum + e[i]);
+        if (i < mac.size() && e[i] != 0)
+        {
+            allZero = false;
+        }
+    }
+    if (sum != 0 || allZero || (e[0] & 1u) != 0)
+    {
+        return false;
+    }
+    std::copy_n(e.begin(), mac.size(), mac.begin());
+    return true;
+}
+
+std::string macString(const std::array<std::uint8_t, 6>& m)
+{
+    char b[18];
+    std::snprintf(b, sizeof(b), "%02X:%02X:%02X:%02X:%02X:%02X", m[0], m[1],
+                  m[2], m[3], m[4], m[5]);
+    return b;
+}
+
+// Publish both host NICs; the returned interfaces just need to stay alive for
+// the daemon's lifetime. Ids follow the host OS naming (eth0 = LAN1) so the
+// Redfish ids line up with what the deployed OS and its provisioning config
+// call the same ports. A missing EEPROM or invalid entry publishes nothing:
+// bmcweb then serves an empty (still valid) collection.
+std::vector<std::shared_ptr<sdbusplus::asio::dbus_interface>>
+    publishHostNics(sdbusplus::asio::object_server& server)
+{
+    std::vector<std::shared_ptr<sdbusplus::asio::dbus_interface>> out;
+    int fd = ::open(kMacEeprom, O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+    {
+        return out;
+    }
+    constexpr struct
+    {
+        const char* id;
+        const char* pretty;
+        off_t offset;
+    } nics[] = {
+        {"eth0", "Onboard LAN1 (Intel X550-AT2 10GbE)", 0x3F90},
+        {"eth1", "Onboard LAN2 (Intel X550-AT2 10GbE)", 0x3F98},
+    };
+    for (const auto& n : nics)
+    {
+        std::array<std::uint8_t, 6> mac{};
+        if (!readEepromMac(fd, n.offset, mac))
+        {
+            continue;
+        }
+        const std::string path = std::string(kNicRoot) + "/" + n.id;
+        auto item =
+            server.add_interface(path, "xyz.openbmc_project.Inventory.Item");
+        item->register_property<std::string>("PrettyName", n.pretty);
+        item->register_property("Present", true);
+        item->initialize();
+        out.push_back(item);
+
+        auto nic = server.add_interface(
+            path, "xyz.openbmc_project.Inventory.Item.NetworkInterface");
+        nic->register_property<std::string>("MACAddress", macString(mac));
+        nic->initialize();
+        out.push_back(nic);
+    }
+    ::close(fd);
+    return out;
+}
 
 // Holds every interface published for the current blob so a refresh can tear
 // them all down and rebuild.
@@ -1123,10 +1235,16 @@ int main()
     // plus GetManagedObjects on this manager. Every inventory publisher owns one.
     server.add_manager(kInventoryRoot);
 
+    // Host NIC MACs come from the board EEPROM, not the P2A blob: published
+    // before (and regardless of) the P2A path coming up.
+    auto nics = publishHostNics(server);
+
     Monitor monitor(io, conn, server);
-    if (!monitor.start())
+    const bool haveP2a = monitor.start();
+    if (!haveP2a && nics.empty())
     {
-        // No P2A device (wrong kernel/DT) — nothing to do, but do not crash-loop.
+        // No P2A device (wrong kernel/DT) and no NICs — nothing to serve, but
+        // do not crash-loop.
         return 0;
     }
 

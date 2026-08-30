@@ -1,0 +1,367 @@
+From: OpenBMC X570D4I-2T port <nbatkins@gmail.com>
+Subject: [PATCH] redfish: Systems EthernetInterfaces from NIC inventory
+
+Serve read-only /redfish/v1/Systems/system/EthernetInterfaces from
+xyz.openbmc_project.Inventory.Item.NetworkInterface inventory objects.
+
+Upstream bmcweb has no Systems-level EthernetInterfaces: ethernet.hpp is
+the BMC's own network stack (Managers/bmc) and hypervisor_system.hpp is
+the IBM PHYP contract, expecting writable xyz.openbmc_project.Network.*
+objects under /xyz/openbmc_project/network/hypervisor. Neither can
+describe the HOST's NICs on a board where the BMC simply knows what is
+installed. phosphor-dbus-interfaces already defines the right inventory
+shape (Item.NetworkInterface, a MACAddress string plus an optional
+produced_by association), so render that, exactly the way storage.hpp
+and fabric_adapters.hpp render Item.Storage / Item.FabricAdapter.
+
+On this board the publisher is p2a-inventory-monitor, which reads the
+host X550-AT2 port MACs out of the board FRU EEPROM (i2c7/0x57,
+0x3F90/0x3F98) — so the collection answers with the host powered off,
+which is the case provisioning stacks (Ironic, Metal3, metal-boot) care
+about: they enumerate exactly this collection to discover boot MACs.
+The routes carry no board-specific knowledge.
+
+Upstream-Status: Pending
+
+Also link EthernetInterfaces from the ComputerSystem resource alongside
+its Storage/Memory/FabricAdapters siblings (non-multi-host block only,
+matching those).
+
+--- a/redfish-core/src/redfish.cpp
++++ b/redfish-core/src/redfish.cpp
+@@ -54,6 +54,7 @@
+ #include "storage_controller.hpp"
+ #include "switch_port.hpp"
+ #include "systems.hpp"
++#include "systems_ethernet.hpp"
+ #include "systems_logservices_dbus_eventlog.hpp"
+ #include "systems_logservices_hostlogger.hpp"
+ #include "systems_logservices_journal_eventlog.hpp"
+@@ -202,6 +203,8 @@
+     requestRoutesMemory(app);
+ 
+     requestRoutesSystems(app);
++    requestRoutesSystemsEthernetInterfaceCollection(app);
++    requestRoutesSystemsEthernetInterface(app);
+ 
+     requestRoutesBiosService(app);
+     requestRoutesBiosReset(app);
+--- a/redfish-core/lib/systems.hpp
++++ b/redfish-core/lib/systems.hpp
+@@ -3096,6 +3096,9 @@
+         asyncResp->res.jsonValue["FabricAdapters"]["@odata.id"] =
+             boost::urls::format("/redfish/v1/Systems/{}/FabricAdapters",
+                                 systemName);
++        asyncResp->res.jsonValue["EthernetInterfaces"]["@odata.id"] =
++            boost::urls::format("/redfish/v1/Systems/{}/EthernetInterfaces",
++                                systemName);
+     }
+ 
+     asyncResp->res.jsonValue["Actions"]["#ComputerSystem.Reset"]["target"] =
+--- /dev/null
++++ b/redfish-core/lib/systems_ethernet.hpp
+@@ -0,0 +1,304 @@
++// SPDX-License-Identifier: Apache-2.0
++// SPDX-FileCopyrightText: Copyright OpenBMC Authors
++#pragma once
++
++// Read-only /redfish/v1/Systems/<id>/EthernetInterfaces, backed by
++// xyz.openbmc_project.Inventory.Item.NetworkInterface inventory objects.
++//
++// Upstream bmcweb has no Systems-level EthernetInterfaces at all: ethernet.hpp
++// is the BMC's own stack (Managers/bmc) and hypervisor_system.hpp is the IBM
++// PHYP contract (writable xyz.openbmc_project.Network.* objects under
++// /xyz/openbmc_project/network/hypervisor). Neither can describe the HOST's
++// NICs on a machine where the BMC merely knows what is installed.
++//
++// phosphor-dbus-interfaces already defines the right inventory shape —
++// Inventory.Item.NetworkInterface carries a MACAddress string — so these
++// routes render any such inventory object as an EthernetInterface, the same
++// way storage.hpp/fabric_adapters.hpp render Item.Storage/Item.FabricAdapter.
++// On the X570D4I-2T the publisher is p2a-inventory-monitor, which reads the
++// host X550 port MACs from the board FRU EEPROM; the routes carry no
++// board-specific knowledge. Provisioning stacks (Ironic, Metal3, metal-boot)
++// enumerate exactly this collection to discover a machine's boot MACs, host
++// powered on or off.
++
++#include "bmcweb_config.h"
++
++#include "app.hpp"
++#include "async_resp.hpp"
++#include "dbus_utility.hpp"
++#include "error_messages.hpp"
++#include "generated/enums/resource.hpp"
++#include "http_request.hpp"
++#include "logging.hpp"
++#include "query.hpp"
++#include "registries/privilege_registry.hpp"
++#include "utils/collection.hpp"
++
++#include <asm-generic/errno.h>
++
++#include <boost/beast/http/field.hpp>
++#include <boost/beast/http/verb.hpp>
++#include <boost/system/error_code.hpp>
++#include <boost/url/format.hpp>
++#include <sdbusplus/message/native_types.hpp>
++
++#include <array>
++#include <functional>
++#include <memory>
++#include <string>
++#include <string_view>
++#include <utility>
++
++namespace redfish
++{
++
++constexpr std::array<std::string_view, 1> systemsEthernetInterfaces{
++    "xyz.openbmc_project.Inventory.Item.NetworkInterface"};
++
++inline void getSystemsEthernetMac(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& serviceName, const std::string& nicPath)
++{
++    dbus::utility::getProperty<std::string>(
++        serviceName, nicPath,
++        "xyz.openbmc_project.Inventory.Item.NetworkInterface", "MACAddress",
++        // ast-grep-ignore: long-lambda
++        [asyncResp](const boost::system::error_code& ec,
++                    const std::string& mac) {
++            if (ec)
++            {
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error for MACAddress");
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++            asyncResp->res.jsonValue["MACAddress"] = mac;
++            // Inventory MACs are factory-provisioned, not runtime overrides.
++            asyncResp->res.jsonValue["PermanentMACAddress"] = mac;
++        });
++}
++
++inline void getSystemsEthernetState(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& serviceName, const std::string& nicPath)
++{
++    dbus::utility::getProperty<bool>(
++        serviceName, nicPath, "xyz.openbmc_project.Inventory.Item", "Present",
++        // ast-grep-ignore: long-lambda
++        [asyncResp](const boost::system::error_code& ec, const bool present) {
++            if (ec)
++            {
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error for State");
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++            if (!present)
++            {
++                asyncResp->res.jsonValue["Status"]["State"] =
++                    resource::State::Absent;
++            }
++        });
++}
++
++inline void getSystemsEthernetName(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& serviceName, const std::string& nicPath)
++{
++    dbus::utility::getProperty<std::string>(
++        serviceName, nicPath, "xyz.openbmc_project.Inventory.Item",
++        "PrettyName",
++        // ast-grep-ignore: long-lambda
++        [asyncResp](const boost::system::error_code& ec,
++                    const std::string& prettyName) {
++            if (ec || prettyName.empty())
++            {
++                return;
++            }
++            asyncResp->res.jsonValue["Name"] = prettyName;
++        });
++}
++
++inline void doSystemsEthernetInterfaceGet(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& systemName, const std::string& ifaceId,
++    const std::string& nicPath, const std::string& serviceName)
++{
++    asyncResp->res.addHeader(
++        boost::beast::http::field::link,
++        "</redfish/v1/JsonSchemas/EthernetInterface/EthernetInterface.json>; rel=describedby");
++    asyncResp->res.jsonValue["@odata.type"] =
++        "#EthernetInterface.v1_9_0.EthernetInterface";
++    asyncResp->res.jsonValue["Name"] = "System Ethernet Interface";
++    asyncResp->res.jsonValue["Id"] = ifaceId;
++    asyncResp->res.jsonValue["@odata.id"] = boost::urls::format(
++        "/redfish/v1/Systems/{}/EthernetInterfaces/{}", systemName, ifaceId);
++
++    asyncResp->res.jsonValue["Status"]["State"] = resource::State::Enabled;
++    asyncResp->res.jsonValue["Status"]["Health"] = resource::Health::OK;
++    asyncResp->res.jsonValue["InterfaceEnabled"] = true;
++
++    getSystemsEthernetMac(asyncResp, serviceName, nicPath);
++    getSystemsEthernetState(asyncResp, serviceName, nicPath);
++    getSystemsEthernetName(asyncResp, serviceName, nicPath);
++}
++
++inline void afterGetValidSystemsEthernetPath(
++    const std::string& ifaceId,
++    std::function<void(const boost::system::error_code&,
++                       const std::string& nicPath,
++                       const std::string& serviceName)>& callback,
++    const boost::system::error_code& ec,
++    const dbus::utility::MapperGetSubTreeResponse& subtree)
++{
++    std::string nicPath;
++    std::string serviceName;
++    if (ec)
++    {
++        callback(ec, nicPath, serviceName);
++        return;
++    }
++
++    for (const auto& [objectPath, serviceMap] : subtree)
++    {
++        if (sdbusplus::object_path(objectPath).filename() == ifaceId)
++        {
++            nicPath = objectPath;
++            serviceName = serviceMap.begin()->first;
++            break;
++        }
++    }
++    callback(ec, nicPath, serviceName);
++}
++
++inline void getValidSystemsEthernetPath(
++    const std::string& ifaceId,
++    std::function<void(const boost::system::error_code& ec,
++                       const std::string& nicPath,
++                       const std::string& serviceName)>&& callback)
++{
++    dbus::utility::getSubTree(
++        "/xyz/openbmc_project/inventory", 0, systemsEthernetInterfaces,
++        std::bind_front(afterGetValidSystemsEthernetPath, ifaceId,
++                        std::move(callback)));
++}
++
++inline void afterHandleSystemsEthernetInterfaceGet(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& systemName, const std::string& ifaceId,
++    const boost::system::error_code& ec, const std::string& nicPath,
++    const std::string& serviceName)
++{
++    if (ec)
++    {
++        if (ec.value() == boost::system::errc::io_error)
++        {
++            messages::resourceNotFound(asyncResp->res, "EthernetInterface",
++                                       ifaceId);
++            return;
++        }
++
++        BMCWEB_LOG_ERROR("DBus method call failed with error {}", ec.value());
++        messages::internalError(asyncResp->res);
++        return;
++    }
++    if (nicPath.empty() || serviceName.empty())
++    {
++        BMCWEB_LOG_WARNING("EthernetInterface {} not found", ifaceId);
++        messages::resourceNotFound(asyncResp->res, "EthernetInterface",
++                                   ifaceId);
++        return;
++    }
++    doSystemsEthernetInterfaceGet(asyncResp, systemName, ifaceId, nicPath,
++                                  serviceName);
++}
++
++inline void handleSystemsEthernetInterfaceGet(
++    App& app, const crow::Request& req,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& systemName, const std::string& ifaceId)
++{
++    if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++    {
++        return;
++    }
++    if constexpr (BMCWEB_EXPERIMENTAL_REDFISH_MULTI_COMPUTER_SYSTEM)
++    {
++        // Option currently returns no systems.  TBD
++        messages::resourceNotFound(asyncResp->res, "ComputerSystem",
++                                   systemName);
++        return;
++    }
++    if (systemName != BMCWEB_REDFISH_SYSTEM_URI_NAME)
++    {
++        messages::resourceNotFound(asyncResp->res, "ComputerSystem",
++                                   systemName);
++        return;
++    }
++    getValidSystemsEthernetPath(
++        ifaceId, std::bind_front(afterHandleSystemsEthernetInterfaceGet,
++                                 asyncResp, systemName, ifaceId));
++}
++
++inline void handleSystemsEthernetInterfaceCollectionGet(
++    crow::App& app, const crow::Request& req,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& systemName)
++{
++    if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++    {
++        return;
++    }
++    if constexpr (BMCWEB_EXPERIMENTAL_REDFISH_MULTI_COMPUTER_SYSTEM)
++    {
++        // Option currently returns no systems. TBD
++        messages::resourceNotFound(asyncResp->res, "ComputerSystem",
++                                   systemName);
++        return;
++    }
++    if (systemName != BMCWEB_REDFISH_SYSTEM_URI_NAME)
++    {
++        messages::resourceNotFound(asyncResp->res, "ComputerSystem",
++                                   systemName);
++        return;
++    }
++
++    asyncResp->res.addHeader(
++        boost::beast::http::field::link,
++        "</redfish/v1/JsonSchemas/EthernetInterfaceCollection/EthernetInterfaceCollection.json>; rel=describedby");
++    asyncResp->res.jsonValue["@odata.type"] =
++        "#EthernetInterfaceCollection.EthernetInterfaceCollection";
++    asyncResp->res.jsonValue["Name"] = "Ethernet Interface Collection";
++    asyncResp->res.jsonValue["Description"] =
++        "Collection of ethernet interfaces for this system";
++    asyncResp->res.jsonValue["@odata.id"] = boost::urls::format(
++        "/redfish/v1/Systems/{}/EthernetInterfaces", systemName);
++
++    collection_util::getCollectionMembers(
++        asyncResp,
++        boost::urls::format("/redfish/v1/Systems/{}/EthernetInterfaces",
++                            BMCWEB_REDFISH_SYSTEM_URI_NAME),
++        systemsEthernetInterfaces, "/xyz/openbmc_project/inventory");
++}
++
++inline void requestRoutesSystemsEthernetInterfaceCollection(App& app)
++{
++    BMCWEB_ROUTE(app, "/redfish/v1/Systems/<str>/EthernetInterfaces/")
++        .privileges(redfish::privileges::getEthernetInterfaceCollection)
++        .methods(boost::beast::http::verb::get)(std::bind_front(
++            handleSystemsEthernetInterfaceCollectionGet, std::ref(app)));
++}
++
++inline void requestRoutesSystemsEthernetInterface(App& app)
++{
++    BMCWEB_ROUTE(app, "/redfish/v1/Systems/<str>/EthernetInterfaces/<str>/")
++        .privileges(redfish::privileges::getEthernetInterface)
++        .methods(boost::beast::http::verb::get)(
++            std::bind_front(handleSystemsEthernetInterfaceGet, std::ref(app)));
++}
++
++} // namespace redfish

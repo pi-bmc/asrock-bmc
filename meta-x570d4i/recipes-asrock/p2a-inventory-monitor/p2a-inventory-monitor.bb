@@ -8,7 +8,10 @@ This daemon unlocks that window via /dev/aspeed-p2a-ctrl, validates the blob, \
 and republishes it as phosphor Inventory.Item.Storage / Item.Drive / \
 Item.StorageController / Item.PCIeDevice objects (with Asset, presence, SMART \
 life and a chassis 'drive' association) that bmcweb renders as Redfish Storage, \
-Drives, StorageControllers and PCIeDevices. Publication is gated on host power."
+Drives, StorageControllers and PCIeDevices. Publication is gated on host power. \
+It also publishes the host's onboard NIC MACs (Item.NetworkInterface, read from \
+the board FRU EEPROM, NOT gated on host power) backing bmcweb's Systems \
+EthernetInterfaces routes."
 LICENSE = "Apache-2.0"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/Apache-2.0;md5=89aea4e17d99a7cacdbeed46a0096b10"
 

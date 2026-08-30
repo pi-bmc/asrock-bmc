@@ -27,6 +27,15 @@
 #          overrides at all — with no media attached the BIOS builds no CD or
 #          removable boot entry and the override falls through to NVMe.
 #
+#   0004 — Systems EthernetInterfaces. Upstream has no Systems-level ethernet
+#          routes at all (Managers/bmc is the BMC's own stack; the hypervisor
+#          variant is IBM PHYP-specific). This adds read-only
+#          /redfish/v1/Systems/system/EthernetInterfaces rendered from
+#          Inventory.Item.NetworkInterface objects, which
+#          p2a-inventory-monitor publishes from the host X550 MACs stored in
+#          the board FRU EEPROM — the collection Ironic/Metal3-style
+#          provisioning enumerates to discover boot MACs, host on or off.
+#
 # SMBIOS still arrives over IPMI (blob handler; see smbios-mdr_%.bbappend).
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
@@ -34,6 +43,7 @@ SRC_URI += " \
     file://0001-redfish-bios-attributes-from-basebiostable.patch \
     file://0002-redfish-ami-host-interface-routes.patch \
     file://0003-enable-nbd-virtual-media-routes.patch \
+    file://0004-redfish-systems-ethernet-interfaces-from-inventory.patch \
     "
 
 # Disable bmcweb's zstd HTTP compression.
