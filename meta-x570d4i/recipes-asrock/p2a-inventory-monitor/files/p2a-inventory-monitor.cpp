@@ -887,8 +887,14 @@ class Monitor
         for (std::uint16_t i = 0; i < h->DriveCount; i++)
         {
             const auto& d = drives[i];
-            publishDrive(i, d);
-            publishController(d, seenControllerSerials);
+            // The PCIe function owning this drive's controller (when the BIOS
+            // resolved it) supplies the vendor name for the Asset Manufacturer
+            // — NVMe Identify carries no manufacturer string of its own.
+            const OOB_INV_PCIE_RECORD* owner = pcieForDrive(d, pcie,
+                                                            h->PcieCount);
+            const std::string vendor = owner ? namesFor(*owner).vendor : "";
+            publishDrive(i, d, vendor);
+            publishController(d, vendor, seenControllerSerials);
         }
 
         // Fallback when the BIOS reported no drives. This is the NORMAL case on
@@ -982,8 +988,7 @@ class Monitor
         // alongside the drive rather than being an empty collection.
         const std::string cpath =
             std::string(kStoragePath) + "/controller_nvme" + std::to_string(idx);
-        pub.add(cpath, "xyz.openbmc_project.Inventory.Item.StorageController")
-            ->initialize();
+        addStorageController(cpath);
         {
             auto item = pub.add(cpath, "xyz.openbmc_project.Inventory.Item");
             item->register_property<std::string>(
@@ -994,7 +999,63 @@ class Monitor
         addAsset(cpath, model, "", n.vendor);
     }
 
-    void publishDrive(std::uint16_t idx, const OOB_INV_DRIVE_RECORD& d)
+    // The PCIe record for a drive's owning controller. Exact BDF match first —
+    // but the BDF the NVMe pass-thru path records does not always agree with
+    // the enumeration list (measured on HW 2026-08-30: the 990 EVO's drive
+    // record says 0000:06:00.0 while enumeration has no bus 06 at all, only
+    // the 0x0108 function at 0000:2b:00.0), so when the exact match fails
+    // fall back to the class-0108 (NVMe) function IF there is exactly one:
+    // with a single NVMe controller in the box the attribution is certain,
+    // and with several it stays honest by returning nothing.
+    const OOB_INV_PCIE_RECORD* pcieForDrive(const OOB_INV_DRIVE_RECORD& d,
+                                            const OOB_INV_PCIE_RECORD* pcie,
+                                            std::uint16_t count) const
+    {
+        if (d.Bus != OOB_INV_LOC_UNKNOWN)
+        {
+            for (std::uint16_t i = 0; i < count; i++)
+            {
+                if (pcie[i].Segment == d.Segment && pcie[i].Bus == d.Bus &&
+                    pcie[i].Device == d.Device &&
+                    pcie[i].Function == d.Function)
+                {
+                    return &pcie[i];
+                }
+            }
+        }
+        const OOB_INV_PCIE_RECORD* nvme = nullptr;
+        for (std::uint16_t i = 0; i < count; i++)
+        {
+            if (pcie[i].ClassBase == 0x01 && pcie[i].ClassSub == 0x08)
+            {
+                if (nvme != nullptr)
+                {
+                    return nullptr; // ambiguous: more than one NVMe function
+                }
+                nvme = &pcie[i];
+            }
+        }
+        return nvme;
+    }
+
+    // Marker interface plus the Protocol property bmcweb patch 0005 renders as
+    // SupportedDeviceProtocols / NVMeControllerProperties. Everything this
+    // daemon can describe is NVMe by construction (the blob's drive records
+    // are NVMe-only and the synthesized path filters on class 0x0108); the
+    // value reuses the Item.Drive DriveProtocol vocabulary because phosphor
+    // defines no controller-side protocol enum.
+    void addStorageController(const std::string& path)
+    {
+        auto ctrl = pub.add(
+            path, "xyz.openbmc_project.Inventory.Item.StorageController");
+        ctrl->register_property<std::string>(
+            "Protocol",
+            "xyz.openbmc_project.Inventory.Item.Drive.DriveProtocol.NVMe");
+        ctrl->initialize();
+    }
+
+    void publishDrive(std::uint16_t idx, const OOB_INV_DRIVE_RECORD& d,
+                      const std::string& vendor)
     {
         const std::string id = "nvme" + std::to_string(idx);
         const std::string path = std::string(kStoragePath) + "/" + id;
@@ -1032,7 +1093,7 @@ class Monitor
             state->register_property("Rebuilding", false);
             state->initialize();
         }
-        addAsset(path, model, serial);
+        addAsset(path, model, serial, vendor);
 
         if (!boardPath.empty())
         {
@@ -1046,6 +1107,7 @@ class Monitor
     }
 
     void publishController(const OOB_INV_DRIVE_RECORD& d,
+                           const std::string& vendor,
                            std::vector<std::string>& seenSerials)
     {
         const std::string serial = field(d.Serial, sizeof(d.Serial));
@@ -1064,8 +1126,7 @@ class Monitor
         const std::string path = std::string(kStoragePath) + "/" + id;
         const std::string model = field(d.Model, sizeof(d.Model));
 
-        pub.add(path, "xyz.openbmc_project.Inventory.Item.StorageController")
-            ->initialize();
+        addStorageController(path);
         {
             auto item = pub.add(path, "xyz.openbmc_project.Inventory.Item");
             item->register_property<std::string>("PrettyName",
@@ -1073,7 +1134,7 @@ class Monitor
             item->register_property("Present", true);
             item->initialize();
         }
-        addAsset(path, model, serial);
+        addAsset(path, model, serial, vendor);
     }
 
     void publishPcie(const OOB_INV_PCIE_RECORD& p)

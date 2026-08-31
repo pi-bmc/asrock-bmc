@@ -36,6 +36,14 @@
 #          the board FRU EEPROM — the collection Ironic/Metal3-style
 #          provisioning enumerates to discover boot MACs, host on or off.
 #
+#   0005 — StorageController protocols. Upstream renders no protocol or
+#          controller-type fields (and the phosphor StorageController D-Bus
+#          interface defines no properties to map). Reads an optional
+#          `Protocol` property (Item.Drive DriveProtocol vocabulary) from the
+#          controller inventory object and emits SupportedDeviceProtocols /
+#          SupportedControllerProtocols / NVMeControllerProperties
+#          .ControllerType. p2a-inventory-monitor publishes the property.
+#
 # SMBIOS still arrives over IPMI (blob handler; see smbios-mdr_%.bbappend).
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
@@ -44,6 +52,7 @@ SRC_URI += " \
     file://0002-redfish-ami-host-interface-routes.patch \
     file://0003-enable-nbd-virtual-media-routes.patch \
     file://0004-redfish-systems-ethernet-interfaces-from-inventory.patch \
+    file://0005-redfish-storage-controller-protocols-from-inventory.patch \
     "
 
 # Disable bmcweb's zstd HTTP compression.

@@ -1,0 +1,89 @@
+From: OpenBMC X570D4I-2T port <nbatkins@gmail.com>
+Subject: [PATCH] redfish: StorageController protocols from inventory
+
+Render SupportedControllerProtocols / SupportedDeviceProtocols and
+NVMeControllerProperties.ControllerType on
+/redfish/v1/Systems/system/Storage/1/Controllers/<id>.
+
+Upstream populateStorageController serves only Id/Name, Status from
+Item.Present, and the Asset decorator: there is no D-Bus property it
+maps to any protocol or controller-type field, and phosphor's
+Inventory.Item.StorageController interface is a bare marker defining no
+properties at all. So read an OPTIONAL `Protocol` string property from
+that same interface, using the existing Item.Drive DriveProtocol enum
+vocabulary (the only storage-protocol enum phosphor defines) and the
+existing convertDriveProtocol() mapping from storage_chassis.hpp. A
+controller that resolves to NVMe additionally reports
+NVMeControllerProperties.ControllerType=IO, and every controller the
+inventory can describe attaches over PCIe, so that is the controller
+protocol. Controllers without the property just omit the fields, as
+before.
+
+On this board the publisher is p2a-inventory-monitor.
+
+Upstream-Status: Pending
+
+--- a/redfish-core/lib/storage_controller.hpp
++++ b/redfish-core/lib/storage_controller.hpp
+@@ -5,10 +5,15 @@
+ 
+ #include "app.hpp"
+ #include "async_resp.hpp"
++#include "generated/enums/protocol.hpp"
+ #include "generated/enums/resource.hpp"
++#include "generated/enums/storage_controller.hpp"
+ #include "http_request.hpp"
+ #include "query.hpp"
+ #include "registries/privilege_registry.hpp"
++#include "storage_chassis.hpp"
++
++#include <optional>
+ 
+ namespace redfish
+ {
+@@ -47,6 +52,45 @@
+ 
+     asset_utils::getAssetInfo(asyncResp, connectionName, path, ""_json_pointer,
+                               false);
++
++    // Optional Protocol property on the StorageController inventory object,
++    // using the Item.Drive DriveProtocol enum vocabulary (there is no
++    // controller-side protocol enum in phosphor-dbus-interfaces). Controllers
++    // that do not publish it simply omit the protocol fields.
++    dbus::utility::getProperty<std::string>(
++        connectionName, path,
++        "xyz.openbmc_project.Inventory.Item.StorageController", "Protocol",
++        // ast-grep-ignore: long-lambda
++        [asyncResp](const boost::system::error_code& ec,
++                    const std::string& proto) {
++            if (ec)
++            {
++                return;
++            }
++            std::optional<protocol::Protocol> deviceProtocol =
++                convertDriveProtocol(proto);
++            if (!deviceProtocol ||
++                *deviceProtocol == protocol::Protocol::Invalid)
++            {
++                return;
++            }
++            nlohmann::json::array_t deviceProtocols;
++            deviceProtocols.emplace_back(*deviceProtocol);
++            asyncResp->res.jsonValue["SupportedDeviceProtocols"] =
++                std::move(deviceProtocols);
++            // Everything the inventory can describe here is a PCIe-attached
++            // controller (NVMe, or SATA/SAS HBAs hanging off PCIe functions).
++            nlohmann::json::array_t controllerProtocols;
++            controllerProtocols.emplace_back(protocol::Protocol::PCIe);
++            asyncResp->res.jsonValue["SupportedControllerProtocols"] =
++                std::move(controllerProtocols);
++            if (*deviceProtocol == protocol::Protocol::NVMe)
++            {
++                asyncResp->res
++                    .jsonValue["NVMeControllerProperties"]["ControllerType"] =
++                    storage_controller::NVMeControllerType::IO;
++            }
++        });
+ }
+ 
+ inline void getStorageControllerHandler(
