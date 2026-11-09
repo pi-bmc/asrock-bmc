@@ -24,7 +24,14 @@
 
 #define KCS_DATA_PORT  FixedPcdGet16 (PcdIpmiKcsDataPort)
 #define KCS_CMD_PORT   FixedPcdGet16 (PcdIpmiKcsCmdPort)
-#define KCS_SPIN       FixedPcdGet32 (PcdIpmiKcsSpinCount)
+#define KCS_TIMEOUT_US  FixedPcdGet32 (PcdIpmiKcsTimeoutUs)
+
+//
+// How long a busy interface gets to go idle on its own before it is forced
+// there with an abort, and how many abort attempts to make.
+//
+#define KCS_IDLE_GRACE_US  100000
+#define KCS_ABORT_RETRIES  3
 
 //
 // KCS status register bits (read from the command port).
@@ -49,8 +56,117 @@
 #define KCS_CTL_WRITE_END    0x62
 #define KCS_CTL_READ         0x68
 
+//
+// Time base.
+//
+// Every wait below is bounded in real time, as Linux's KCS driver bounds its own
+// (5 s). A spin count is not a time: each poll is one LPC status read, whose
+// cost varies with the bus and the BMC, and the old 1M-poll bound came out at
+// roughly 1-2 s here -- under a slow-but-valid ipmid reply.
+//
+// The clock is the HPET main counter. It is memory-mapped at a fixed address,
+// states its own tick period, and needs no boot service -- this library runs
+// inside AMI's DXE core, at raised TPL, before arch protocols such as the
+// metronome are necessarily up. Only the low 32 bits are read; unsigned
+// subtraction absorbs one wrap, and at the FCH's 14.318 MHz one wrap is ~300 s.
+// Without a usable HPET (absent, stopped), polls are counted instead at a
+// conservative 1 us each -- slower than any LPC read.
+//
+#define HPET_BASE           FixedPcdGet32 (PcdOobHpetBaseAddress)
+#define HPET_CAP_ID         0x000   // revision, vendor id, counter size
+#define HPET_CAP_PERIOD     0x004   // main counter tick period, femtoseconds
+#define HPET_CONFIG         0x010   // bit 0 = ENABLE_CNF
+#define HPET_MAIN_COUNTER   0x0F0
+#define HPET_MAX_PERIOD_FS  100000000   // the spec's ceiling: 100 ns per tick
+
+typedef struct {
+  BOOLEAN  Hpet;
+  UINT32   Start;
+  UINT32   Limit;      // HPET ticks, or polls without an HPET
+  UINT32   Polls;
+} KCS_DEADLINE;
+
+//
+// Tick period of a verified-running HPET, 0 until one has been seen. Only
+// success is cached, so a counter enabled later in DXE is still picked up.
+//
+STATIC UINT32  mHpetPeriodFs = 0;
+
+STATIC
+BOOLEAN
+KcsHpetUsable (
+  VOID
+  )
+{
+  UINT32  Period;
+  UINT32  First;
+  UINTN   Index;
+
+  if (mHpetPeriodFs != 0) {
+    return TRUE;
+  }
+
+  Period = MmioRead32 (HPET_BASE + HPET_CAP_PERIOD);
+  if ((MmioRead32 (HPET_BASE + HPET_CAP_ID) == 0xFFFFFFFF) ||
+      (Period == 0) || (Period > HPET_MAX_PERIOD_FS) ||
+      ((MmioRead32 (HPET_BASE + HPET_CONFIG) & BIT0) == 0))
+  {
+    return FALSE;
+  }
+
+  //
+  // Enabled is not the same as counting: insist on seeing it move.
+  //
+  First = MmioRead32 (HPET_BASE + HPET_MAIN_COUNTER);
+  for (Index = 0; Index < 1000; Index++) {
+    if (MmioRead32 (HPET_BASE + HPET_MAIN_COUNTER) != First) {
+      mHpetPeriodFs = Period;
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+STATIC
+VOID
+KcsDeadlineStart (
+  OUT KCS_DEADLINE  *Deadline,
+  IN  UINT32        Microseconds
+  )
+{
+  Deadline->Polls = 0;
+  if (KcsHpetUsable ()) {
+    Deadline->Hpet  = TRUE;
+    Deadline->Limit = (UINT32)DivU64x32 (
+                                MultU64x32 (Microseconds, 1000000000),
+                                mHpetPeriodFs
+                                );
+    Deadline->Start = MmioRead32 (HPET_BASE + HPET_MAIN_COUNTER);
+  } else {
+    Deadline->Hpet  = FALSE;
+    Deadline->Start = 0;
+    Deadline->Limit = Microseconds;
+  }
+}
+
+STATIC
+BOOLEAN
+KcsDeadlineExpired (
+  IN OUT KCS_DEADLINE  *Deadline
+  )
+{
+  if (Deadline->Hpet) {
+    return (BOOLEAN)(
+      (UINT32)(MmioRead32 (HPET_BASE + HPET_MAIN_COUNTER) - Deadline->Start)
+      >= Deadline->Limit);
+  }
+
+  return (BOOLEAN)(++Deadline->Polls > Deadline->Limit);
+}
+
 /**
-  Spin until the Input Buffer Full flag clears, i.e. the BMC has consumed the
+  Wait until the Input Buffer Full flag clears, i.e. the BMC has consumed the
   byte we wrote.
 **/
 STATIC
@@ -59,19 +175,20 @@ KcsWaitInputEmpty (
   VOID
   )
 {
-  UINT32  Spin;
+  KCS_DEADLINE  Deadline;
 
-  for (Spin = 0; Spin < KCS_SPIN; Spin++) {
+  KcsDeadlineStart (&Deadline, KCS_TIMEOUT_US);
+  do {
     if ((IoRead8 (KCS_CMD_PORT) & KCS_STATUS_IBF) == 0) {
       return EFI_SUCCESS;
     }
-  }
+  } while (!KcsDeadlineExpired (&Deadline));
 
   return EFI_TIMEOUT;
 }
 
 /**
-  Spin until the Output Buffer Full flag sets, i.e. the BMC has a byte for us.
+  Wait until the Output Buffer Full flag sets, i.e. the BMC has a byte for us.
 **/
 STATIC
 EFI_STATUS
@@ -79,13 +196,14 @@ KcsWaitOutputFull (
   VOID
   )
 {
-  UINT32  Spin;
+  KCS_DEADLINE  Deadline;
 
-  for (Spin = 0; Spin < KCS_SPIN; Spin++) {
+  KcsDeadlineStart (&Deadline, KCS_TIMEOUT_US);
+  do {
     if ((IoRead8 (KCS_CMD_PORT) & KCS_STATUS_OBF) != 0) {
       return EFI_SUCCESS;
     }
-  }
+  } while (!KcsDeadlineExpired (&Deadline));
 
   return EFI_TIMEOUT;
 }
@@ -108,6 +226,87 @@ KcsFlushOutput (
 }
 
 /**
+  Return the interface to IDLE_STATE with the IPMI v2.0 section 9.15 error-exit
+  ("GET_STATUS/ABORT") sequence.
+
+  Nothing else recovers KCS once a transaction is abandoned part-way. The case
+  that matters: a request is written, the BMC is slow to answer, the host gives
+  up. The BMC then posts its late reply, which leaves the interface in
+  READ_STATE with a byte waiting -- and every later transaction, ours and the
+  platform firmware's (OobIpmiDxe carries AMI's IPMI too), finds it never idle.
+  On this board that silently lost the BIOS's boot-option read, so the boot
+  override was ignored, and could hang POST outright, until Linux's ipmi_si
+  reset the interface at OS boot. The AST2500 kcs_bmc driver implements the BMC
+  half of this sequence and discards the stale reply.
+
+  @retval EFI_SUCCESS       The interface is idle again.
+  @retval EFI_NOT_READY     Nothing is driving the interface (it reads 0xFF).
+  @retval EFI_DEVICE_ERROR  The BMC did not follow the sequence.
+**/
+STATIC
+EFI_STATUS
+KcsAbort (
+  VOID
+  )
+{
+  UINTN  Attempt;
+  UINT8  ErrorCode;
+
+  //
+  // A floating bus reads 0xFF, and a BMC that never drains the input buffer is
+  // not running its KCS driver at all. Neither can follow the sequence, so fail
+  // fast instead of stacking timeouts onto every attempt while it boots.
+  //
+  if (IoRead8 (KCS_CMD_PORT) == 0xFF) {
+    return EFI_NOT_READY;
+  }
+
+  for (Attempt = 0; Attempt < KCS_ABORT_RETRIES; Attempt++) {
+    if (EFI_ERROR (KcsWaitInputEmpty ())) {
+      break;
+    }
+
+    IoWrite8 (KCS_CMD_PORT, KCS_CTL_GET_STATUS);
+    if (EFI_ERROR (KcsWaitInputEmpty ()) ||
+        (KCS_STATE (IoRead8 (KCS_CMD_PORT)) != KCS_STATE_WRITE))
+    {
+      continue;
+    }
+
+    KcsFlushOutput ();
+    IoWrite8 (KCS_DATA_PORT, 0x00);
+    if (EFI_ERROR (KcsWaitInputEmpty ()) ||
+        (KCS_STATE (IoRead8 (KCS_CMD_PORT)) != KCS_STATE_READ) ||
+        EFI_ERROR (KcsWaitOutputFull ()))
+    {
+      continue;
+    }
+
+    ErrorCode = IoRead8 (KCS_DATA_PORT);
+    IoWrite8 (KCS_DATA_PORT, KCS_CTL_READ);
+    if (EFI_ERROR (KcsWaitInputEmpty ()) ||
+        (KCS_STATE (IoRead8 (KCS_CMD_PORT)) != KCS_STATE_IDLE))
+    {
+      continue;
+    }
+
+    //
+    // IDLE carries one final dummy byte; consume it so OBF is clear.
+    //
+    if (!EFI_ERROR (KcsWaitOutputFull ())) {
+      IoRead8 (KCS_DATA_PORT);
+    }
+
+    DEBUG ((DEBUG_WARN, "IpmiKcs: interface reset (BMC status %02x)\n", ErrorCode));
+    (VOID)ErrorCode;  // only DEBUG reads it; keep release builds warning-free
+    return EFI_SUCCESS;
+  }
+
+  DEBUG ((DEBUG_ERROR, "IpmiKcs: abort sequence failed\n"));
+  return EFI_DEVICE_ERROR;
+}
+
+/**
   Wait for the interface to be idle and unowned before starting a transaction.
 
   The platform firmware issues its own IPMI traffic throughout DXE, so barging
@@ -119,10 +318,25 @@ KcsAcquire (
   VOID
   )
 {
-  UINT32  Spin;
-  UINT8   Status;
+  KCS_DEADLINE  Deadline;
+  UINT8         Status;
 
-  for (Spin = 0; Spin < KCS_SPIN; Spin++) {
+  KcsDeadlineStart (&Deadline, KCS_IDLE_GRACE_US);
+  do {
+    Status = IoRead8 (KCS_CMD_PORT);
+    if (((Status & KCS_STATUS_IBF) == 0) && (KCS_STATE (Status) == KCS_STATE_IDLE)) {
+      KcsFlushOutput ();
+      return EFI_SUCCESS;
+    }
+  } while (!KcsDeadlineExpired (&Deadline));
+
+  //
+  // Still not idle. Waiting longer cannot help: either an earlier exchange was
+  // abandoned and the BMC's late reply is parked in READ_STATE, or another
+  // client we pre-empted holds it mid-transfer and cannot run until we return.
+  // Force it idle; a client we interrupted sees an error and retries.
+  //
+  if (!EFI_ERROR (KcsAbort ())) {
     Status = IoRead8 (KCS_CMD_PORT);
     if (((Status & KCS_STATUS_IBF) == 0) && (KCS_STATE (Status) == KCS_STATE_IDLE)) {
       KcsFlushOutput ();
@@ -217,20 +431,28 @@ KcsReadPhase (
   OUT BOOLEAN *Truncated
   )
 {
-  EFI_STATUS  Status;
-  UINT32      Spin;
-  UINT8       StatusReg;
-  UINT8       Value;
+  EFI_STATUS    Status;
+  KCS_DEADLINE  Deadline;
+  BOOLEAN       Ready;
+  UINT8         StatusReg;
+  UINT8         Value;
 
   *Received  = 0;
   *Truncated = FALSE;
 
   while (TRUE) {
-    for (Spin = 0; Spin < KCS_SPIN; Spin++) {
+    //
+    // The first pass of this wait is the BMC executing the command; later
+    // passes are one byte each. Both get the full timeout, as in Linux.
+    //
+    Ready = FALSE;
+    KcsDeadlineStart (&Deadline, KCS_TIMEOUT_US);
+    do {
       StatusReg = IoRead8 (KCS_CMD_PORT);
       if ((KCS_STATE (StatusReg) == KCS_STATE_READ) ||
           (KCS_STATE (StatusReg) == KCS_STATE_IDLE))
       {
+        Ready = TRUE;
         break;
       }
 
@@ -238,9 +460,9 @@ KcsReadPhase (
         DEBUG ((DEBUG_ERROR, "IpmiKcs: BMC signalled ERROR_STATE\n"));
         return EFI_DEVICE_ERROR;
       }
-    }
+    } while (!KcsDeadlineExpired (&Deadline));
 
-    if (Spin >= KCS_SPIN) {
+    if (!Ready) {
       return EFI_TIMEOUT;
     }
 
@@ -307,15 +529,45 @@ KcsExchange (
   Status = KcsWritePhase (Frame, FrameSize);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "IpmiKcs: write phase failed - %r\n", Status));
+    //
+    // Never leave a half-finished exchange behind: the next caller -- possibly
+    // the platform firmware's own IPMI stack -- would find the interface stuck.
+    //
+    KcsAbort ();
     return Status;
   }
 
   Status = KcsReadPhase (Reply, ReplyCapacity, Received, Truncated);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "IpmiKcs: read phase failed - %r\n", Status));
+    KcsAbort ();
+    return Status;
   }
 
-  return Status;
+  //
+  // Only accept a reply that answers this request: NetFn + 1 with the same LUN,
+  // and the same command. KCS carries no sequence number, so a reply the BMC
+  // posted late for an earlier, abandoned exchange would otherwise be read as
+  // the answer to this one -- and every reply after it would be off by one.
+  // The exchange itself completed cleanly, so the interface is idle; the
+  // caller just has to ask again.
+  //
+  if ((MIN (*Received, ReplyCapacity) < 2) ||
+      (Reply[0] != (UINT8)((((Frame[0] >> 2) + 1) << 2) | (Frame[0] & 0x03))) ||
+      (Reply[1] != Frame[1]))
+  {
+    DEBUG ((
+      DEBUG_ERROR,
+      "IpmiKcs: reply %02x/%02x does not answer request %02x/%02x\n",
+      (MIN (*Received, ReplyCapacity) > 0) ? Reply[0] : 0,
+      (MIN (*Received, ReplyCapacity) > 1) ? Reply[1] : 0,
+      Frame[0],
+      Frame[1]
+      ));
+    return EFI_PROTOCOL_ERROR;
+  }
+
+  return EFI_SUCCESS;
 }
 
 VOID

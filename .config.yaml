@@ -111,11 +111,6 @@ local_conf_header:
     # nodejs/) instead of compiling nodejs-native from source for webui-vue;
     # saves ~30 CPU-minutes on cold builds.
     PREFERRED_PROVIDER_nodejs-native = "nodejs-prebuilt-native"
-    # Pin the caches under TOPDIR (<workspace>/build) so CI (.github/workflows/
-    # build.yaml) can archive/restore them at a known path. These are the Yocto
-    # defaults, made explicit.
-    # DL_DIR = "${TOPDIR}/downloads"
-    # SSTATE_DIR = "${TOPDIR}/sstate-cache"
     BB_DISKMON_DIRS = "\
         STOPTASKS,${TMPDIR},1G,100K \
         STOPTASKS,${DL_DIR},1G,100K \
@@ -125,7 +120,14 @@ local_conf_header:
         HALT,${DL_DIR},100M,1K \
         HALT,${SSTATE_DIR},100M,1K \
         HALT,/tmp,10M,1K"
-    # Shared download and sstate directories (can be overridden per user)
-    DL_DIR = "/opt/yocto/downloads"
-    SSTATE_DIR = "/opt/yocto/sstate-cache"
+    # Shared download and sstate directories. MUST stay `?=`: kas forwards
+    # DL_DIR/SSTATE_DIR from the environment, and bitbake applies those before
+    # parsing this file, so `?=` lets CI (.github/workflows/build.yaml) point
+    # them at the paths it caches. A hard `=` here silently sent CI's sstate to
+    # /opt/yocto, its cache saved nothing, and every run rebuilt from scratch.
+    DL_DIR ?= "/opt/yocto/downloads"
+    SSTATE_DIR ?= "/opt/yocto/sstate-cache"
+    # Keep the hash-equivalence DB next to the sstate it describes: objects are
+    # named by unihash, so sstate without this DB is partly unfindable. CI
+    # caches it with the sstate.
     BB_HASHSERVE_DB_DIR = "${SSTATE_DIR}"

@@ -58,7 +58,11 @@
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/message.hpp>
+#include <sys/eventfd.h>
+#include <unistd.h>
 
+#include <boost/asio/buffer.hpp>
+#include <boost/asio/posix/stream_descriptor.hpp>
 #include <boost/crc.hpp>
 #include <lzma.h>
 #include <nlohmann/json.hpp>
@@ -67,10 +71,16 @@
 #include <array>
 #include <cstring>
 #include <ctime>
+#include <deque>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <system_error>
+#include <thread>
 #include <vector>
 
 namespace asrock
@@ -86,7 +96,9 @@ namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
 // In-memory state. ipmid runs a single-threaded asio event loop, so the
-// handlers below are never re-entered concurrently — no locking needed.
+// handlers below are never re-entered concurrently — no locking needed. The
+// one worker thread (the payload commit pipeline) touches none of this: it
+// works on copies and hands its results back to the event loop.
 // ---------------------------------------------------------------------------
 struct PayloadMeta
 {
@@ -243,53 +255,59 @@ static void storeCapability()
 // Commit a parsed BIOS attribute table to the BIOSConfig.Manager BaseBIOSTable
 // property. The table type comes straight from bios::Xml::getBaseTable(), so no
 // conversion is needed — it already has the D-Bus shape a{s(sbsssvva(svs))}.
+//
+// Asynchronous on purpose: the property is a few hundred attributes that
+// bios-settings-manager re-validates, and a blocking bus->call() here held
+// ipmid's only thread for ~0.7 s while the host was mid-POST and waiting on
+// KCS replies. `done` runs on the event loop with the outcome.
 // ---------------------------------------------------------------------------
-static bool commitBaseBIOSTable(const bios::BiosBaseTableType& table)
+static void commitBaseBIOSTable(bios::BiosBaseTableType table,
+                                const char* source,
+                                std::function<void(bool)> done)
 {
-    try
-    {
-        auto bus = ::getSdBus();
-        auto m = bus->new_method_call(biosMgrService, biosMgrPath,
-                                      "org.freedesktop.DBus.Properties", "Set");
-        m.append(std::string(biosMgrIface), std::string("BaseBIOSTable"),
-                 std::variant<bios::BiosBaseTableType>(table));
-        bus->call(m);
-    }
-    catch (const std::exception& e)
-    {
-        log<level::ERR>("biosconfig: failed to set BaseBIOSTable",
-                        entry("ERR=%s", e.what()));
-        return false;
-    }
-
-    log<level::INFO>("biosconfig: BaseBIOSTable populated from BIOS XML",
-                     entry("COUNT=%zu", table.size()));
-    return true;
+    const std::size_t count = table.size();
+    ::getSdBus()->async_method_call(
+        [count, source, done = std::move(done)](
+            const boost::system::error_code& ec) {
+            if (ec)
+            {
+                log<level::ERR>("biosconfig: failed to set BaseBIOSTable",
+                                entry("ERR=%s", ec.message().c_str()));
+                done(false);
+                return;
+            }
+            log<level::INFO>("biosconfig: BaseBIOSTable populated",
+                             entry("SOURCE=%s", source),
+                             entry("COUNT=%zu", count));
+            done(true);
+        },
+        biosMgrService, biosMgrPath, "org.freedesktop.DBus.Properties", "Set",
+        std::string(biosMgrIface), std::string("BaseBIOSTable"),
+        std::variant<bios::BiosBaseTableType>(std::move(table)));
 }
 
 // ---------------------------------------------------------------------------
 // Attribute count currently published in BaseBIOSTable, or nullopt if it could
 // not be read. Used only to decide whether an unchanged payload may be skipped;
 // callers treat "unknown" as "re-publish", so a transient D-Bus failure costs a
-// redundant parse instead of leaving Redfish with an empty table.
+// redundant parse instead of leaving Redfish with an empty table. Asynchronous
+// for the same reason as the commit: the reply is the whole table.
 // ---------------------------------------------------------------------------
-static std::optional<size_t> baseBiosTableSize()
+static void baseBiosTableSize(std::function<void(std::optional<size_t>)> done)
 {
-    try
-    {
-        auto bus = ::getSdBus();
-        auto m = bus->new_method_call(biosMgrService, biosMgrPath,
-                                      "org.freedesktop.DBus.Properties", "Get");
-        m.append(std::string(biosMgrIface), std::string("BaseBIOSTable"));
-        auto reply = bus->call(m);
-        std::variant<bios::BiosBaseTableType> v;
-        reply.read(v);
-        return std::get<bios::BiosBaseTableType>(v).size();
-    }
-    catch (const std::exception&)
-    {
-        return std::nullopt;
-    }
+    ::getSdBus()->async_method_call(
+        [done = std::move(done)](
+            const boost::system::error_code& ec,
+            const std::variant<bios::BiosBaseTableType>& value) {
+            if (ec)
+            {
+                done(std::nullopt);
+                return;
+            }
+            done(std::get<bios::BiosBaseTableType>(value).size());
+        },
+        biosMgrService, biosMgrPath, "org.freedesktop.DBus.Properties", "Get",
+        std::string(biosMgrIface), std::string("BaseBIOSTable"));
 }
 
 // ---------------------------------------------------------------------------
@@ -338,15 +356,21 @@ static bool lzmaAloneDecode(const std::vector<uint8_t>& in,
 }
 
 // ---------------------------------------------------------------------------
-// Turn a received SetPayload body into BaseBIOSTable, mirroring intel-ipmi-oem
+// Turn a received schema payload into a BaseBIOSTable, mirroring intel-ipmi-oem
 // ipmiOEMSetPayload. The AMI BIOS sends the Aptio XML LZMA-compressed, so we
 // decompress first (payloads that already start with '<' are treated as plain
 // XML), write the XML out for tinyxml2 (which reads a file path), then
-// bios::Xml -> doDepexCompute -> getBaseTable -> commit. Returns true if the
-// table was populated on D-Bus.
+// bios::Xml -> doDepexCompute -> getBaseTable. The knob list from the same
+// parse is returned too, so the schema never has to be parsed a second time.
+//
+// Runs on the commit worker thread, so apart from writing xmlPath it touches
+// no shared state. The XML is written to a temporary file and renamed into
+// place, so a reader on the event loop never sees a half-written schema.
 // ---------------------------------------------------------------------------
-static bool processBiosXml(const std::vector<uint8_t>& payload,
-                           const std::string& xmlPath)
+static bool parseBiosXml(const std::vector<uint8_t>& payload,
+                         const std::string& xmlPath,
+                         bios::BiosBaseTableType& table,
+                         std::vector<bios::knob::knob>& knobs)
 {
     std::vector<uint8_t> xml;
     if (!payload.empty() && payload[0] == '<')
@@ -360,16 +384,26 @@ static bool processBiosXml(const std::vector<uint8_t>& payload,
     }
 
     // tinyxml2 (bios::Xml) loads from a file; persist the decompressed XML.
+    const std::string tmpPath = xmlPath + ".tmp";
     {
-        std::ofstream f(xmlPath, std::ios::binary | std::ios::trunc);
+        std::ofstream f(tmpPath, std::ios::binary | std::ios::trunc);
+        f.write(reinterpret_cast<const char*>(xml.data()),
+                static_cast<std::streamsize>(xml.size()));
         if (!f)
         {
             log<level::ERR>("biosconfig: cannot write decompressed XML",
-                            entry("PATH=%s", xmlPath.c_str()));
+                            entry("PATH=%s", tmpPath.c_str()));
             return false;
         }
-        f.write(reinterpret_cast<const char*>(xml.data()),
-                static_cast<std::streamsize>(xml.size()));
+    }
+    std::error_code ec;
+    fs::rename(tmpPath, xmlPath, ec);
+    if (ec)
+    {
+        log<level::ERR>("biosconfig: cannot install decompressed XML",
+                        entry("PATH=%s", xmlPath.c_str()),
+                        entry("ERR=%s", ec.message().c_str()));
+        return false;
     }
 
     try
@@ -380,12 +414,12 @@ static bool processBiosXml(const std::vector<uint8_t>& payload,
             log<level::WARNING>(
                 "biosconfig: depex compute reported errors; continuing");
         }
-        bios::BiosBaseTableType table;
         if (!biosxml.getBaseTable(table))
         {
             log<level::ERR>("biosconfig: getBaseTable produced no attributes");
             return false;
         }
+        knobs = biosxml.getKnobList();
 
         // Force every attribute read-only *in this table*. The schema alone
         // carries no live values: it is a defaults template compiled into the
@@ -403,7 +437,7 @@ static bool processBiosXml(const std::vector<uint8_t>& payload,
         {
             std::get<1>(attribute.second) = true;
         }
-        return commitBaseBIOSTable(table);
+        return true;
     }
     catch (const std::exception& e)
     {
@@ -439,24 +473,34 @@ static std::string schemaXmlPath()
            ".xml";
 }
 
+// Parse the knob list out of the committed schema. Touches no shared state,
+// so the commit worker and the startup preload can call it off the event loop.
+static std::vector<bios::knob::knob> loadSchemaKnobs()
+{
+    try
+    {
+        bios::Xml xml(schemaXmlPath().c_str());
+        xml.doDepexCompute();
+        return xml.getKnobList();
+    }
+    catch (const std::exception& e)
+    {
+        log<level::ERR>("biosconfig: cannot load knob schema",
+                        entry("PATH=%s", schemaXmlPath().c_str()),
+                        entry("ERR=%s", e.what()));
+        return {};
+    }
+}
+
+// The knob list, parsed on demand. Normally already in memory -- preloaded at
+// startup and replaced whenever a schema is committed -- so the synchronous
+// parse here is only a fallback.
 static const std::vector<bios::knob::knob>* schemaKnobs()
 {
     if (!g_knobsValid)
     {
-        try
-        {
-            bios::Xml xml(schemaXmlPath().c_str());
-            xml.doDepexCompute();
-            g_knobs = xml.getKnobList();
-            g_knobsValid = true;
-        }
-        catch (const std::exception& e)
-        {
-            log<level::ERR>("biosconfig: cannot load knob schema",
-                            entry("PATH=%s", schemaXmlPath().c_str()),
-                            entry("ERR=%s", e.what()));
-            return nullptr;
-        }
+        g_knobs = loadSchemaKnobs();
+        g_knobsValid = !g_knobs.empty();
     }
     return g_knobs.empty() ? nullptr : &g_knobs;
 }
@@ -481,26 +525,6 @@ static bool getPendingAttributes(PendingAttributes& out)
     }
 }
 
-static bool setPendingAttributes(const PendingAttributes& value)
-{
-    try
-    {
-        auto bus = ::getSdBus();
-        auto m = bus->new_method_call(biosMgrService, biosMgrPath,
-                                      "org.freedesktop.DBus.Properties", "Set");
-        m.append(std::string(biosMgrIface), std::string("PendingAttributes"),
-                 std::variant<PendingAttributes>(value));
-        bus->call(m);
-        return true;
-    }
-    catch (const std::exception& e)
-    {
-        log<level::ERR>("biosconfig: cannot update PendingAttributes",
-                        entry("ERR=%s", e.what()));
-        return false;
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Retire the staged attributes that the freshly received snapshot proves are
 // now in effect.
@@ -512,17 +536,11 @@ static bool setPendingAttributes(const PendingAttributes& value)
 // own varstore. Anything that silently failed simply stays pending and is
 // retried on the next boot.
 // ---------------------------------------------------------------------------
-static void retirePendingFromSnapshot(
-    const std::vector<bios::knob::knob>& knobs,
-    const asrock::varstore::Snapshot& snap)
+static std::size_t retireApplied(const std::vector<bios::knob::knob>& knobs,
+                                 const asrock::varstore::Snapshot& snap,
+                                 const PendingAttributes& pending,
+                                 PendingAttributes& remaining)
 {
-    PendingAttributes pending;
-    if (!getPendingAttributes(pending) || pending.empty())
-    {
-        return;
-    }
-
-    PendingAttributes remaining;
     std::size_t retired = 0;
 
     for (const auto& [name, entry] : pending)
@@ -568,21 +586,64 @@ static void retirePendingFromSnapshot(
         }
     }
 
-    if (retired != 0)
-    {
-        log<level::INFO>("biosconfig: staged attributes now live in the BIOS",
-                         entry("RETIRED=%zu", retired),
-                         entry("REMAINING=%zu", remaining.size()));
-        setPendingAttributes(remaining);
-    }
+    return retired;
+}
+
+// Asynchronous: runs on the event loop after a snapshot is committed, and the
+// host may be mid-POST waiting on KCS replies. Takes its own copies.
+static void retirePendingFromSnapshot(std::vector<bios::knob::knob> knobs,
+                                      asrock::varstore::Snapshot snap)
+{
+    ::getSdBus()->async_method_call(
+        [knobs = std::move(knobs), snap = std::move(snap)](
+            const boost::system::error_code& ec,
+            const std::variant<PendingAttributes>& value) {
+            if (ec)
+            {
+                return;
+            }
+            const auto& pending = std::get<PendingAttributes>(value);
+            if (pending.empty())
+            {
+                return;
+            }
+            PendingAttributes remaining;
+            const std::size_t retired =
+                retireApplied(knobs, snap, pending, remaining);
+            if (retired == 0)
+            {
+                return;
+            }
+            log<level::INFO>("biosconfig: staged attributes now live in the BIOS",
+                             entry("RETIRED=%zu", retired),
+                             entry("REMAINING=%zu", remaining.size()));
+            ::getSdBus()->async_method_call(
+                [](const boost::system::error_code& setEc) {
+                    if (setEc)
+                    {
+                        log<level::ERR>(
+                            "biosconfig: cannot update PendingAttributes",
+                            entry("ERR=%s", setEc.message().c_str()));
+                    }
+                },
+                biosMgrService, biosMgrPath, "org.freedesktop.DBus.Properties",
+                "Set", std::string(biosMgrIface),
+                std::string("PendingAttributes"),
+                std::variant<PendingAttributes>(std::move(remaining)));
+        },
+        biosMgrService, biosMgrPath, "org.freedesktop.DBus.Properties", "Get",
+        std::string(biosMgrIface), std::string("PendingAttributes"));
 }
 
 // ---------------------------------------------------------------------------
-// Turn a type-2 snapshot into BaseBIOSTable.
+// Turn a type-2 snapshot into a BaseBIOSTable. Pure: runs on the commit worker.
 // ---------------------------------------------------------------------------
-static bool publishSnapshot(const std::vector<uint8_t>& blob)
+static bool buildSnapshotTable(const std::vector<uint8_t>& blob,
+                               const std::vector<bios::knob::knob>& knobs,
+                               asrock::varstore::Snapshot& snap,
+                               bios::BiosBaseTableType& table,
+                               std::size_t& live)
 {
-    asrock::varstore::Snapshot snap;
     if (!asrock::varstore::parseSnapshot(blob, snap))
     {
         log<level::ERR>("biosconfig: malformed varstore snapshot",
@@ -590,19 +651,8 @@ static bool publishSnapshot(const std::vector<uint8_t>& blob)
         return false;
     }
 
-    const auto* knobs = schemaKnobs();
-    if (knobs == nullptr)
-    {
-        // The schema arrives as a separate payload; on a fresh BMC the host
-        // sends it in the same boot, but ordering is the host's choice.
-        log<level::WARNING>(
-            "biosconfig: varstore snapshot received before any schema");
-        return false;
-    }
-
-    bios::BiosBaseTableType table;
-    std::size_t live = 0;
-    asrock::varstore::buildTable(*knobs, snap, table, live);
+    live = 0;
+    asrock::varstore::buildTable(knobs, snap, table, live);
     if (table.empty() || live == 0)
     {
         log<level::ERR>(
@@ -611,21 +661,418 @@ static bool publishSnapshot(const std::vector<uint8_t>& blob)
             entry("COUNT=%zu", table.size()));
         return false;
     }
-
-    if (!commitBaseBIOSTable(table))
-    {
-        return false;
-    }
-
-    log<level::INFO>("biosconfig: BaseBIOSTable updated from live varstores",
-                     entry("VARSTORES=%zu", snap.records.size()),
-                     entry("COUNT=%zu", table.size()),
-                     entry("LIVE=%zu", live));
-
-    retirePendingFromSnapshot(*knobs, snap);
-    g_snapshot = std::move(snap);
     return true;
 }
+
+// ===========================================================================
+// Payload commit pipeline
+//
+// A completed transfer is ACKed as soon as it is integrity-checked and on
+// disk; turning it into BaseBIOSTable happens afterwards, off the KCS path.
+//
+// The host waits for the reply to the final chunk, and its KCS transport gives
+// every reply a fixed budget (roughly one to two seconds on this board's
+// OpenOobPkg). This work used to run inside the handler -- LZMA inflate, a
+// ~180 KB tinyxml2 parse, building the table and a blocking BaseBIOSTable
+// write -- and one snapshot was measured at 2.48 s. The BIOS abandoned the
+// reply, the interface wedged for the rest of POST, and everything after it
+// was lost: BiosCfgOobDxe looped on 0x60/0x77 behind a black console and the
+// boot override was never read.
+//
+// Merely deferring the same work onto the event loop would move the stall onto
+// the host's next request, so the CPU half runs on a worker thread. ipmid is
+// built with BOOST_ASIO_DISABLE_THREADS, so the worker never touches asio: it
+// queues its completion under a mutex and signals an eventfd the event loop
+// watches. The completion -- which owns all the state above, and makes its
+// D-Bus calls asynchronously -- then runs back on the loop. Jobs run one at a
+// time in arrival order, because the type-2 snapshot of a boot is resolved
+// against the type-1 schema the same boot sends first.
+// ===========================================================================
+namespace commit
+{
+
+static int g_eventFd = -1;
+static std::unique_ptr<boost::asio::posix::stream_descriptor> g_eventDesc;
+static uint64_t g_eventCount = 0;
+static std::mutex g_readyMutex;
+static std::deque<std::function<void()>> g_ready; // filled by worker threads
+
+static void armEvent();
+
+static void onEvent(const boost::system::error_code& ec, std::size_t)
+{
+    if (ec == boost::asio::error::operation_aborted)
+    {
+        return;
+    }
+    std::deque<std::function<void()>> ready;
+    {
+        std::lock_guard<std::mutex> lock(g_readyMutex);
+        ready.swap(g_ready);
+    }
+    for (auto& fn : ready)
+    {
+        fn();
+    }
+    armEvent();
+}
+
+static void armEvent()
+{
+    g_eventDesc->async_read_some(
+        boost::asio::buffer(&g_eventCount, sizeof(g_eventCount)), onEvent);
+}
+
+static bool init()
+{
+    if (g_eventDesc)
+    {
+        return true;
+    }
+    const int fd = ::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if (fd < 0)
+    {
+        log<level::ERR>("biosconfig: eventfd failed; committing inline");
+        return false;
+    }
+    try
+    {
+        g_eventDesc = std::make_unique<boost::asio::posix::stream_descriptor>(
+            *getIoContext(), fd);
+    }
+    catch (const std::exception& e)
+    {
+        ::close(fd);
+        log<level::ERR>("biosconfig: cannot watch eventfd; committing inline",
+                        entry("ERR=%s", e.what()));
+        return false;
+    }
+    g_eventFd = fd;
+    armEvent();
+    return true;
+}
+
+// Run `work` on a worker thread and hand its result to `done` on the event
+// loop. Falls back to running both inline if no thread can be started.
+template <typename Result>
+static void offload(std::function<Result()> work,
+                    std::function<void(Result)> done)
+{
+    struct Task
+    {
+        std::function<Result()> work;
+        std::function<void(Result)> done;
+    };
+    auto task = std::make_shared<Task>(Task{std::move(work), std::move(done)});
+
+    if (init())
+    {
+        try
+        {
+            std::thread([task] {
+                // An exception escaping a detached thread would terminate
+                // ipmid; report it as an empty (failed) result instead.
+                std::shared_ptr<Result> result;
+                try
+                {
+                    result = std::make_shared<Result>(task->work());
+                }
+                catch (const std::exception& e)
+                {
+                    log<level::ERR>("biosconfig: commit worker failed",
+                                    entry("ERR=%s", e.what()));
+                    result = std::make_shared<Result>();
+                }
+                {
+                    std::lock_guard<std::mutex> lock(g_readyMutex);
+                    g_ready.emplace_back(
+                        [task, result] { task->done(std::move(*result)); });
+                }
+                const uint64_t one = 1;
+                // Nothing useful to do on failure: the counter only saturates.
+                [[maybe_unused]] auto n = ::write(g_eventFd, &one, sizeof(one));
+            }).detach();
+            return;
+        }
+        catch (const std::system_error& e)
+        {
+            log<level::WARNING>("biosconfig: no worker thread; committing "
+                                "inline",
+                                entry("ERR=%s", e.what()));
+        }
+    }
+    task->done(task->work());
+}
+
+struct Job
+{
+    uint8_t type = 0;
+    std::vector<uint8_t> payload;
+    uint32_t checksum = 0;
+};
+
+static std::deque<Job> g_jobs;
+static bool g_busy = false;
+
+static void next();
+
+static void finished()
+{
+    g_busy = false;
+    next();
+}
+
+struct XmlResult
+{
+    bool ok = false;
+    bios::BiosBaseTableType table;
+    std::vector<bios::knob::knob> knobs;
+};
+
+static void parseAndCommitXml(Job job)
+{
+    const uint8_t type = job.type;
+    const uint32_t checksum = job.checksum;
+    const std::size_t bytes = job.payload.size();
+    const std::string xmlPath = std::string(stateDir) + "/Payload" +
+                                std::to_string(type) + ".xml";
+
+    offload<XmlResult>(
+        [payload = std::move(job.payload), xmlPath] {
+            XmlResult r;
+            r.ok = parseBiosXml(payload, xmlPath, r.table, r.knobs);
+            return r;
+        },
+        [type, checksum, bytes](XmlResult r) {
+            if (!r.ok)
+            {
+                log<level::WARNING>(
+                    "biosconfig: BIOS XML captured but BaseBIOSTable not "
+                    "updated (see prior errors)",
+                    entry("TYPE=%u", static_cast<unsigned>(type)),
+                    entry("BYTES=%zu", bytes));
+                finished();
+                return;
+            }
+            commitBaseBIOSTable(
+                std::move(r.table), "BIOS XML",
+                [type, checksum, bytes,
+                 knobs = std::move(r.knobs)](bool ok) mutable {
+                    if (ok)
+                    {
+                        g_committedChecksum[type] = checksum;
+                        // Only the type-1 document is the knob schema
+                        // (schemaXmlPath); adopt the list this parse produced.
+                        if (type == static_cast<uint8_t>(
+                                        PayloadType::xmlType1) &&
+                            !knobs.empty())
+                        {
+                            g_knobs = std::move(knobs);
+                            g_knobsValid = true;
+                        }
+                        storeCapability();
+                        log<level::INFO>(
+                            "biosconfig: BaseBIOSTable updated from BIOS XML",
+                            entry("TYPE=%u", static_cast<unsigned>(type)),
+                            entry("BYTES=%zu", bytes));
+                    }
+                    else
+                    {
+                        log<level::WARNING>(
+                            "biosconfig: BIOS XML captured but BaseBIOSTable "
+                            "not updated (see prior errors)",
+                            entry("TYPE=%u", static_cast<unsigned>(type)),
+                            entry("BYTES=%zu", bytes));
+                    }
+                    finished();
+                });
+        });
+}
+
+static void runXmlJob(Job job)
+{
+    // This BIOS re-pushes a byte-identical document on every POST, so
+    // re-parsing it costs an LZMA inflate, a ~180 KB tinyxml2 parse and a full
+    // BaseBIOSTable write that change nothing. Skip all of that when the
+    // payload matches what we last committed and the table is still
+    // published. Note this only saves BMC work: the BIOS ignores completion
+    // codes (it sends cmd 0x26, gets 0xC1, and transfers anyway), so the KCS
+    // chunks still have to be received and ACKed either way.
+    loadCapability();
+    if (job.checksum != g_committedChecksum[job.type])
+    {
+        parseAndCommitXml(std::move(job));
+        return;
+    }
+    auto pending = std::make_shared<Job>(std::move(job));
+    baseBiosTableSize([pending](std::optional<size_t> published) {
+        if (published.value_or(0) > 0)
+        {
+            log<level::INFO>(
+                "biosconfig: payload unchanged, keeping BaseBIOSTable",
+                entry("TYPE=%u", static_cast<unsigned>(pending->type)),
+                entry("CRC=0x%08X", pending->checksum),
+                entry("COUNT=%zu", *published));
+            finished();
+            return;
+        }
+        parseAndCommitXml(std::move(*pending));
+    });
+}
+
+struct SnapshotResult
+{
+    bool ok = false;
+    bool knobsLoaded = false;
+    std::vector<bios::knob::knob> knobs;
+    asrock::varstore::Snapshot snap;
+    bios::BiosBaseTableType table;
+    std::size_t live = 0;
+};
+
+// The live varstore bytes. This is what makes the published values real: it
+// always follows the schema (skipped or not) in the same boot, so a schema
+// re-push can no longer leave Redfish showing defaults until the next power-off
+// flash sync. No checksum bookkeeping here: recordPayload() already filled
+// g_meta[2], which is what GetPayload(Info) answers, so the host's skip gate is
+// driven by the last snapshot this ipmid instance actually saw. Losing that on
+// restart is the right behaviour -- a fresh instance wants the values again.
+static void runSnapshotJob(Job job)
+{
+    std::optional<std::vector<bios::knob::knob>> knobs;
+    if (g_knobsValid && !g_knobs.empty())
+    {
+        knobs = g_knobs; // the worker gets its own copy
+    }
+    const std::size_t bytes = job.payload.size();
+
+    offload<SnapshotResult>(
+        [payload = std::move(job.payload), knobs = std::move(knobs)]() mutable {
+            SnapshotResult r;
+            if (knobs)
+            {
+                r.knobs = std::move(*knobs);
+            }
+            else
+            {
+                r.knobs = loadSchemaKnobs();
+                r.knobsLoaded = true;
+            }
+            if (r.knobs.empty())
+            {
+                // The schema arrives as a separate payload; on a fresh BMC the
+                // host sends it in the same boot, but ordering is the host's
+                // choice.
+                log<level::WARNING>(
+                    "biosconfig: varstore snapshot received before any schema");
+                return r;
+            }
+            r.ok = buildSnapshotTable(payload, r.knobs, r.snap, r.table,
+                                      r.live);
+            return r;
+        },
+        [bytes](SnapshotResult r) {
+            if (r.knobsLoaded && !r.knobs.empty() && !g_knobsValid)
+            {
+                g_knobs = r.knobs;
+                g_knobsValid = true;
+            }
+            if (!r.ok)
+            {
+                log<level::WARNING>(
+                    "biosconfig: varstore snapshot captured but not "
+                    "published (see prior errors)",
+                    entry("BYTES=%zu", bytes));
+                finished();
+                return;
+            }
+            const std::size_t varstores = r.snap.records.size();
+            const std::size_t count = r.table.size();
+            const std::size_t live = r.live;
+            commitBaseBIOSTable(
+                std::move(r.table), "live varstores",
+                [varstores, count, live, bytes, knobs = std::move(r.knobs),
+                 snap = std::move(r.snap)](bool ok) mutable {
+                    if (ok)
+                    {
+                        log<level::INFO>(
+                            "biosconfig: BaseBIOSTable updated from live "
+                            "varstores",
+                            entry("VARSTORES=%zu", varstores),
+                            entry("COUNT=%zu", count),
+                            entry("LIVE=%zu", live));
+                        retirePendingFromSnapshot(knobs, snap);
+                        g_snapshot = std::move(snap);
+                    }
+                    else
+                    {
+                        log<level::WARNING>(
+                            "biosconfig: varstore snapshot captured but not "
+                            "published (see prior errors)",
+                            entry("BYTES=%zu", bytes));
+                    }
+                    finished();
+                });
+        });
+}
+
+static void next()
+{
+    if (g_busy || g_jobs.empty())
+    {
+        return;
+    }
+    g_busy = true;
+    Job job = std::move(g_jobs.front());
+    g_jobs.pop_front();
+    if (job.type == static_cast<uint8_t>(PayloadType::varstoreSnapshot))
+    {
+        runSnapshotJob(std::move(job));
+    }
+    else
+    {
+        runXmlJob(std::move(job));
+    }
+}
+
+static void enqueue(uint8_t type, std::vector<uint8_t> payload,
+                    uint32_t checksum)
+{
+    // A newer payload of a type still waiting supersedes it in place, which
+    // keeps a boot loop from piling up work and preserves schema-first order.
+    for (auto& queued : g_jobs)
+    {
+        if (queued.type == type)
+        {
+            queued = Job{type, std::move(payload), checksum};
+            return;
+        }
+    }
+    g_jobs.push_back(Job{type, std::move(payload), checksum});
+    next();
+}
+
+// Have the knob schema in memory before the host first asks for staged
+// settings, so GetPayload(type 3) never parses the XML on the event loop.
+static void preloadSchema()
+{
+    std::error_code ec;
+    if (!fs::exists(schemaXmlPath(), ec))
+    {
+        return; // fresh BMC: the host will send the schema
+    }
+    offload<std::vector<bios::knob::knob>>(
+        [] { return loadSchemaKnobs(); },
+        [](std::vector<bios::knob::knob> knobs) {
+            if (!g_knobsValid && !knobs.empty())
+            {
+                g_knobs = std::move(knobs);
+                g_knobsValid = true;
+            }
+        });
+}
+
+} // namespace commit
 
 // ---------------------------------------------------------------------------
 // Encode PendingAttributes into the type-3 payload slot so GetPayload can serve
@@ -874,82 +1321,19 @@ static ipmi::RspType<uint32_t> ipmiSetPayload(uint8_t stateByte,
             recordPayload(payloadType, buf, whole, version,
                           static_cast<uint8_t>(PayloadStatus::valid));
 
-            // The AMI BIOS sends Aptio BIOS-config XML (payloadType 0/1). Parse
-            // the just-persisted file into BaseBIOSTable via bios::Xml. A parse
-            // failure is logged but does NOT fail the transfer: the bytes are on
-            // disk and the BIOS handshake should still complete.
+            // Turning the payload into BaseBIOSTable happens after this reply
+            // and off the event loop -- see the commit pipeline for why the
+            // host must not wait for it. A parse failure is only logged: the
+            // bytes are on disk either way and the handshake completes.
+            const auto received = static_cast<uint32_t>(buf.size());
             if (payloadType == static_cast<uint8_t>(PayloadType::xmlType0) ||
-                payloadType == static_cast<uint8_t>(PayloadType::xmlType1))
+                payloadType == static_cast<uint8_t>(PayloadType::xmlType1) ||
+                payloadType ==
+                    static_cast<uint8_t>(PayloadType::varstoreSnapshot))
             {
-                // This BIOS re-pushes a byte-identical document on every POST,
-                // so re-parsing it costs an LZMA inflate, a ~180 KB tinyxml2
-                // parse and a full BaseBIOSTable write that change nothing.
-                // Skip all of that when the payload matches what we last
-                // committed and the table is still published. Note this only
-                // saves BMC work: the BIOS ignores completion codes (it sends
-                // cmd 0x26, gets 0xC1, and transfers anyway), so the KCS chunks
-                // still have to be received and ACKed either way.
-                loadCapability();
-                std::optional<size_t> published;
-                if (whole == g_committedChecksum[payloadType])
-                {
-                    published = baseBiosTableSize();
-                }
-
-                if (published.value_or(0) > 0)
-                {
-                    log<level::INFO>(
-                        "biosconfig: payload unchanged, keeping BaseBIOSTable",
-                        entry("TYPE=%u", static_cast<unsigned>(payloadType)),
-                        entry("CRC=0x%08X", whole),
-                        entry("COUNT=%zu", *published));
-                }
-                // Raw (LZMA) bytes are at PayloadN (via recordPayload); write the
-                // decompressed XML alongside it as PayloadN.xml for tinyxml2.
-                else if (std::string xmlPath = std::string(stateDir) +
-                                               "/Payload" +
-                                               std::to_string(payloadType) +
-                                               ".xml";
-                         processBiosXml(buf, xmlPath))
-                {
-                    g_committedChecksum[payloadType] = whole;
-                    g_knobsValid = false; // reparse: the schema just changed
-                    storeCapability();
-                    log<level::INFO>(
-                        "biosconfig: BaseBIOSTable updated from BIOS XML",
-                        entry("TYPE=%u", static_cast<unsigned>(payloadType)),
-                        entry("BYTES=%u", static_cast<unsigned>(buf.size())));
-                }
-                else
-                {
-                    log<level::WARNING>(
-                        "biosconfig: BIOS XML captured but BaseBIOSTable not "
-                        "updated (see prior errors)",
-                        entry("TYPE=%u", static_cast<unsigned>(payloadType)),
-                        entry("BYTES=%u", static_cast<unsigned>(buf.size())));
-                }
+                commit::enqueue(payloadType, std::move(buf), whole);
             }
-            // The live varstore bytes. This is what makes the published values
-            // real: it always follows the schema (skipped or not) in the same
-            // boot, so a schema re-push can no longer leave Redfish showing
-            // defaults until the next power-off flash sync.
-            else if (payloadType ==
-                     static_cast<uint8_t>(PayloadType::varstoreSnapshot))
-            {
-                // No checksum bookkeeping here: recordPayload() above already
-                // filled g_meta[2], which is what GetPayload(Info) answers, so
-                // the host's skip gate is driven by the last snapshot this
-                // ipmid instance actually saw. Losing that on restart is the
-                // right behaviour -- a fresh instance wants the values again.
-                if (!publishSnapshot(buf))
-                {
-                    log<level::WARNING>(
-                        "biosconfig: varstore snapshot captured but not "
-                        "published (see prior errors)",
-                        entry("BYTES=%u", static_cast<unsigned>(buf.size())));
-                }
-            }
-            return ipmi::responseSuccess(static_cast<uint32_t>(buf.size()));
+            return ipmi::responseSuccess(received);
         }
 
         case TransferState::userAbort:
@@ -1174,6 +1558,9 @@ static void registerBiosConfigCommands()
                           ipmi::Privilege::Admin, ipmiSetBIOSPwdHashInfo);
     ipmi::registerHandler(ipmi::prioOemBase, netFn, cmdGetBIOSPwdHash,
                           ipmi::Privilege::User, ipmiGetBIOSPwdHash);
+
+    // Runs once the event loop is up (this constructor runs at dlopen).
+    post_work([] { commit::preloadSchema(); });
 }
 
 } // namespace biosconfig

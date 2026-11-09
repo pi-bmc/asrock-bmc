@@ -1,0 +1,40 @@
+From: ASRock Rack X570D4I-2T OpenBMC port
+Subject: [PATCH] chassis: keep the boot type when the BIOS clears the boot flags
+Upstream-Status: Inappropriate [workaround for AMI BIOS behaviour]
+
+The AMI BIOS on this board retires a one-time boot override by writing Set
+System Boot Options parameter 5 with every bit zero. Bit 5 of data byte 1 is
+the BIOS boot type, so that write also reads as "PC compatible (legacy)", and
+the handler stored BootType=Legacy after every one-time boot.
+
+Clients that set an override without BootSourceOverrideMode then inherit
+Legacy: webui-vue never sends the mode, nor did bmclib's minimal-fields
+fallback after bmcweb rejected its full Boot object. This board's boot order
+is UEFI-only (BIOS boot option filter "UEFI only"), so a legacy PXE request
+has no boot entry and the host quietly boots the disk instead.
+
+A write that clears the valid bit revokes the override; it says nothing about
+which mode the next override should use. Only apply the boot type from a
+write that sets the valid bit.
+
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -2315,7 +2315,17 @@
+                 }
+             }
+ 
+-            if (typeIpmiToDbus.end() != typeItr)
++            // Only take the BIOS boot type from a write that sets the valid
++            // bit. The AMI BIOS retires a one-time override with an all-zero
++            // parameter 5, whose bit 5 reads as "PC compatible (legacy)";
++            // applying it rewrote BootType to Legacy after every one-time
++            // boot. Any client that then sets an override without a mode --
++            // webui-vue never sends BootSourceOverrideMode -- inherited
++            // Legacy, and on this UEFI-only boot order a legacy PXE request
++            // has no boot entry, so the host silently booted the disk. A
++            // clear revokes the override; it says nothing about the mode the
++            // next one should use.
++            if (validFlag && typeIpmiToDbus.end() != typeItr)
+             {
+                 rc = setBootType(ctx, typeItr->second);
+                 if (rc != ipmi::ccSuccess)

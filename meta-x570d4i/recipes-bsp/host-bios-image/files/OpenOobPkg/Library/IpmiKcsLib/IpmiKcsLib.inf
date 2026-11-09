@@ -28,5 +28,6 @@
 [Pcd]
   gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsDataPort     ## CONSUMES
   gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsCmdPort      ## CONSUMES
-  gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsSpinCount    ## CONSUMES
+  gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsTimeoutUs    ## CONSUMES
+  gOpenOobPkgTokenSpaceGuid.PcdOobHpetBaseAddress  ## CONSUMES
   gOpenOobPkgTokenSpaceGuid.PcdOobPostCodePort     ## CONSUMES

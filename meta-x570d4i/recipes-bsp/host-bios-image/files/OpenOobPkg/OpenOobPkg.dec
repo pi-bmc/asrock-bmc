@@ -106,9 +106,18 @@
   gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsDataPort|0x0CA2|UINT16|0x00000001
   gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsCmdPort|0x0CA3|UINT16|0x00000002
 
-  ## Bound on each KCS status poll. The BMC can be slow to turn a transaction
-  ## around during its own boot, so this is generous by design.
-  gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsSpinCount|1000000|UINT32|0x00000003
+  ## Bound, in microseconds, on every KCS wait: input buffer drained, output
+  ## byte ready, reply started. 5 s is what Linux's KCS driver allows
+  ## (IBF_RETRY_TIMEOUT / OBF_RETRY_TIMEOUT) and the response time IPMI v2.0
+  ## permits a BMC. Measured in real time against the HPET; see IpmiKcsLib.
+  ## (Replaces the old PcdIpmiKcsSpinCount, token 3, whose 1M status polls came
+  ## out at ~1-2 s on this board -- short enough that a 2.5 s ipmid reply was
+  ## abandoned and left the interface wedged for the rest of POST.)
+  gOpenOobPkgTokenSpaceGuid.PcdIpmiKcsTimeoutUs|5000000|UINT32|0x00000006
+
+  ## HPET register block: the time base for the KCS waits. 0xFED00000 is the
+  ## architectural x86 location and where the AMD FCH decodes it.
+  gOpenOobPkgTokenSpaceGuid.PcdOobHpetBaseAddress|0xFED00000|UINT32|0x00000007
 
   ## POST-code port used for progress breadcrumbs (readable over the BMC's
   ## port-80 snoop, which is how we debug a black-KVM boot).

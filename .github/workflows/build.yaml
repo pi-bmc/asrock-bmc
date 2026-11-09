@@ -22,16 +22,31 @@ env:
   # Non-expiring OCI cache stored as GHCR artifacts. Unlike actions/cache,
   # GHCR packages do not expire after 7 days and are not subject to the 10 GB
   # repo cache limit, so builds can always be resumed from prior sstate.
+  # Layout, sharding and pruning: see .github/scripts/yocto-cache.py.
   CACHE_IMAGE: ghcr.io/${{ github.repository }}/yocto-cache
-  # Must match DL_DIR / SSTATE_DIR pinned in .config.yaml (TOPDIR = <workspace>/build).
+  # kas forwards DL_DIR/SSTATE_DIR from the environment to bitbake, and
+  # .config.yaml sets them with `?=`, so these win in CI. They MUST stay in
+  # sync: when .config.yaml used a hard `=` (/opt/yocto/...), bitbake wrote
+  # its cache there, every save archived these empty dirs, and every run
+  # rebuilt all ~6250 tasks from scratch.
   DL_DIR: ${{ github.workspace }}/build/downloads
   SSTATE_DIR: ${{ github.workspace }}/build/sstate-cache
-  # Cache push/pull needs a write-capable token; fork PRs only get a read-only
-  # one, so caching is disabled there (the build still runs, just uncached).
-  CACHE_ENABLED: ${{ github.event_name != 'pull_request' }}
-  # How often to checkpoint sstate to the registry during the build so progress
-  # survives a cancellation/timeout that interrupts the final save. An OpenBMC
-  # image is a large build; the checkpoint lets a re-run resume mid-flight.
+  # One cache per branch (tag `<kind>-<branch>`), falling back to whatever
+  # branch saved most recently (`<kind>-latest`) for a branch's first run.
+  CACHE_SCOPE: ${{ github.head_ref || github.ref_name }}
+  CACHE_FALLBACK_SCOPES: latest
+  # Every run restores. Only push/dispatch runs save: fork PRs only get a
+  # read-only token, and a PR saving would race the branch's own push run.
+  CACHE_SAVE: ${{ github.event_name != 'pull_request' }}
+  # LRU budgets: the final save of a successful build evicts the
+  # least-recently-used objects beyond these (objects this run used are never
+  # evicted, so a single build can exceed them). Everything restored shares
+  # the runner's ~110 GB free disk with build/tmp, so keep the sum modest.
+  CACHE_SSTATE_BUDGET_GB: "20"
+  CACHE_DOWNLOADS_BUDGET_GB: "16"
+  # How often to checkpoint the caches to the registry during the build so
+  # progress survives a cancellation/timeout that interrupts the final save.
+  # Checkpoints only upload shards that changed since the last one.
   CACHE_CHECKPOINT_INTERVAL_SECONDS: "1200"
 
 jobs:
@@ -43,6 +58,9 @@ jobs:
   # within the run; the GHCR cache carries that sstate forward between runs.
   build:
     runs-on: ubuntu-latest
+    # GitHub's hard limit for hosted runners. The build step's own timeout
+    # below is shorter so the final cache save still gets to run.
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 
@@ -76,33 +94,29 @@ jobs:
         uses: oras-project/setup-oras@v1
 
       - name: Log in to GHCR
-        if: env.CACHE_ENABLED == 'true'
+        # A fork PR's read-only token may not be able to pull; the build then
+        # just runs uncached.
+        continue-on-error: true
         run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Create cache directories
-        run: mkdir -p "$DL_DIR" "$SSTATE_DIR"
-
       - name: Restore Yocto OCI caches
-        if: env.CACHE_ENABLED == 'true'
         continue-on-error: true
-        run: bash "${GITHUB_WORKSPACE}/.github/scripts/yocto-cache.sh" restore sstate downloads
+        run: python3 "${GITHUB_WORKSPACE}/.github/scripts/yocto-cache.py" restore sstate downloads
 
       - name: Build image
+        id: build
+        timeout-minutes: 320
         run: |
           set -uo pipefail
           checkpoint_pid=""
-          if [ "${CACHE_ENABLED}" = "true" ]; then
+          if [ "${CACHE_SAVE}" = "true" ]; then
             (while sleep "${CACHE_CHECKPOINT_INTERVAL_SECONDS}"; do
-               bash "${GITHUB_WORKSPACE}/.github/scripts/yocto-cache.sh" save sstate || true
+               python3 "${GITHUB_WORKSPACE}/.github/scripts/yocto-cache.py" save sstate downloads || true
              done) &
             checkpoint_pid=$!
             trap '[ -n "${checkpoint_pid}" ] && kill "${checkpoint_pid}" 2>/dev/null || true' EXIT INT TERM
           fi
           kas build
-
-      - name: Save Yocto OCI caches
-        if: ${{ always() && env.CACHE_ENABLED == 'true' }}
-        run: bash "${GITHUB_WORKSPACE}/.github/scripts/yocto-cache.sh" save sstate downloads
 
       - name: Upload image artifacts
         if: success()
@@ -115,3 +129,35 @@ jobs:
             build/tmp/deploy/images/**/*.static.mtd.tar
             build/tmp/deploy/images/**/*.mtd.all.tar
             build/tmp/deploy/images/**/*.manifest
+
+      - name: Save Yocto OCI caches
+        if: ${{ always() && env.CACHE_SAVE == 'true' }}
+        # A cache problem must not fail a good build; it shows up as a warning
+        # annotation on the run instead.
+        continue-on-error: true
+        # Prune only after a successful build: a failed or cancelled run hasn't
+        # touched everything it needs yet, so its LRU view is incomplete.
+        # (Waits for any in-flight checkpoint to finish first.)
+        run: |
+          df -h "${GITHUB_WORKSPACE}"
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/yocto-cache.py" save \
+            ${{ steps.build.outcome == 'success' && '--prune' || '' }} sstate downloads
+
+      - name: Delete stale untagged cache versions
+        # Every save makes a new manifest and moves the tags; the old manifest
+        # stays behind untagged. Restores only ever use tags, so drop all but
+        # the newest few (kept so a concurrent restore isn't pulled from
+        # under it). Shard blobs still referenced by a tagged manifest stay.
+        if: ${{ always() && env.CACHE_SAVE == 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER_TYPE: ${{ github.event.repository.owner.type }}
+        run: |
+          set -euo pipefail
+          if [ "${OWNER_TYPE}" = "Organization" ]; then base="orgs/${GITHUB_REPOSITORY_OWNER}"; else base="users/${GITHUB_REPOSITORY_OWNER}"; fi
+          pkg="$(jq -rn --arg p "${CACHE_IMAGE#ghcr.io/*/}" '$p | ascii_downcase | @uri')"
+          gh api --paginate "${base}/packages/container/${pkg}/versions" \
+              --jq '.[] | select(.metadata.container.tags | length == 0) | [.created_at, .id] | @tsv' \
+            | sort -r | tail -n +6 | cut -f2 \
+            | while read -r id; do gh api -X DELETE "${base}/packages/container/${pkg}/versions/${id}"; done

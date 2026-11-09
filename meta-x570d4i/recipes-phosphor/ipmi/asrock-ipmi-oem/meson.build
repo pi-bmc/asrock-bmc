@@ -51,7 +51,12 @@ tinyxml_dep = dependency(
     include_type: 'system',
 )
 
+# biosconfigcommands.cpp commits BIOS payloads on a worker thread so the KCS
+# reply never waits for the parse (see "Payload commit pipeline" there).
+threads_dep = dependency('threads')
+
 asrock_oem_deps = [
+    threads_dep,
     ipmid_dep,
     phosphor_logging_dep,
     sdbusplus_dep,

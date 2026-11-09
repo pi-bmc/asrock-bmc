@@ -622,28 +622,111 @@ std::vector<std::shared_ptr<sdbusplus::asio::dbus_interface>>
     return out;
 }
 
-// Holds every interface published for the current blob so a refresh can tear
-// them all down and rebuild.
+// Every interface published for the current blob, reconciled in place on each
+// refresh rather than torn down and rebuilt.
+//
+// Why in place: the blob carries the NVMe SMART counters, so its CRC changes on
+// every host boot, and a rebuild that removed and re-added ~60 objects emitted
+// ~1000 InterfacesRemoved/InterfacesAdded/PropertiesChanged signals over ~13 s,
+// starting a few seconds after the host's ReadyToBoot push. The ObjectMapper
+// processes every one, so the whole bus slows down in exactly the window in
+// which the BIOS reads its boot options from ipmid over KCS: one such read was
+// measured at 5.25 s, past the BIOS's KCS timeout, which wedged the interface
+// and silently dropped the boot override.
+//
+// Each rebuild is a generation: begin(), then the same add()/register_property()
+// /initialize() calls as before, then end(). An interface that already exists
+// with the same properties of the same types is updated with set_property(),
+// which signals only values that actually changed; anything new or reshaped is
+// (re)created; anything not re-added this generation is removed.
 class Publication
 {
   public:
+    // Collects one interface's properties; initialize() hands them to the
+    // publication, which decides between creating and updating.
+    class Interface
+    {
+      public:
+        Interface(Publication& pub, std::string path, std::string name) :
+            pub(pub), path(std::move(path)), name(std::move(name))
+        {}
+
+        template <typename PropertyType>
+        bool register_property(const std::string& prop,
+                               const PropertyType& value)
+        {
+            props.push_back(Property{
+                prop, typeTag<PropertyType>(),
+                [prop, value](sdbusplus::asio::dbus_interface& iface,
+                              bool update) {
+                    if (update)
+                    {
+                        iface.set_property(prop, value);
+                        return true;
+                    }
+                    return iface.register_property(prop, value);
+                }});
+            return true;
+        }
+
+        bool initialize()
+        {
+            return pub.commit(path, name, props);
+        }
+
+      private:
+        Publication& pub;
+        std::string path;
+        std::string name;
+        friend class Publication;
+
+      public:
+        struct Property
+        {
+            std::string name;
+            const void* type;
+            std::function<bool(sdbusplus::asio::dbus_interface&, bool)> apply;
+        };
+
+      private:
+        std::vector<Property> props;
+    };
+
     explicit Publication(sdbusplus::asio::object_server& s) : server(s) {}
+
+    void begin()
+    {
+        touched.clear();
+    }
+
+    void end()
+    {
+        for (auto it = live.begin(); it != live.end();)
+        {
+            if (touched.contains(it->first))
+            {
+                ++it;
+                continue;
+            }
+            server.remove_interface(it->second.iface);
+            it = live.erase(it);
+        }
+    }
 
     void clear()
     {
-        for (auto& iface : ifaces)
+        for (auto& [key, entry] : live)
         {
-            server.remove_interface(iface);
+            server.remove_interface(entry.iface);
         }
-        ifaces.clear();
+        live.clear();
+        touched.clear();
     }
 
-    std::shared_ptr<sdbusplus::asio::dbus_interface> add(const std::string& path,
-                                                         const std::string& name)
+    std::shared_ptr<Interface> add(const std::string& path,
+                                   const std::string& name)
     {
-        auto i = server.add_interface(path, name);
-        ifaces.push_back(i);
-        return i;
+        return std::make_shared<Interface>(*this, path, name);
     }
 
     ~Publication()
@@ -652,8 +735,65 @@ class Publication
     }
 
   private:
+    using Key = std::pair<std::string, std::string>;
+    using Shape = std::vector<std::pair<std::string, const void*>>;
+
+    struct Entry
+    {
+        std::shared_ptr<sdbusplus::asio::dbus_interface> iface;
+        Shape shape;
+    };
+
+    // One distinct address per property type: a type identity that needs no
+    // RTTI.
+    template <typename PropertyType>
+    static const void* typeTag()
+    {
+        static const char tag = 0;
+        return &tag;
+    }
+
+    bool commit(const std::string& path, const std::string& name,
+                const std::vector<Interface::Property>& props)
+    {
+        const Key key{path, name};
+        touched.insert(key);
+
+        Shape shape;
+        shape.reserve(props.size());
+        for (const auto& p : props)
+        {
+            shape.emplace_back(p.name, p.type);
+        }
+
+        if (auto it = live.find(key); it != live.end())
+        {
+            if (it->second.shape == shape)
+            {
+                for (const auto& p : props)
+                {
+                    p.apply(*it->second.iface, true);
+                }
+                return true;
+            }
+            // Same object, different property set: replace it.
+            server.remove_interface(it->second.iface);
+            live.erase(it);
+        }
+
+        auto iface = server.add_interface(path, name);
+        for (const auto& p : props)
+        {
+            p.apply(*iface, false);
+        }
+        const bool ok = iface->initialize();
+        live.emplace(key, Entry{std::move(iface), std::move(shape)});
+        return ok;
+    }
+
     sdbusplus::asio::object_server& server;
-    std::vector<std::shared_ptr<sdbusplus::asio::dbus_interface>> ifaces;
+    std::map<Key, Entry> live;
+    std::set<Key> touched;
 };
 
 class Monitor
@@ -849,7 +989,7 @@ class Monitor
     // ---- publish ----
     void rebuild(const std::vector<std::uint8_t>& buf)
     {
-        pub.clear();
+        pub.begin();
 
         const auto* h = reinterpret_cast<const OOB_INV_HEADER*>(buf.data());
         const auto* pcie = reinterpret_cast<const OOB_INV_PCIE_RECORD*>(
@@ -927,6 +1067,9 @@ class Monitor
         {
             publishPcie(pcie[i]);
         }
+
+        // Withdraw whatever this blob no longer describes.
+        pub.end();
     }
 
     // Drive + StorageController synthesized from a PCIe mass-storage/NVMe

@@ -1,0 +1,400 @@
+From: ASRock Rack X570D4I-2T OpenBMC port
+Subject: [PATCH] chassis: answer boot option reads from a cached copy
+Upstream-Status: Inappropriate [x570d4i2t KCS timing workaround]
+
+The host BIOS reads System Boot Options over KCS during POST and gives every
+reply a fixed time budget; a reply that misses it leaves the interface
+wedged, and on this board that silently drops the boot override (and with it
+any Redfish PXE request). Parameter 5 cost twelve sequential D-Bus round
+trips: an ObjectMapper GetObject and a Settings Get for each of six
+properties. Captured with busctl monitor during host boots it took 165 ms
+idle and 5.25 s at the moment the BIOS asks, when p2a-inventory-monitor is
+republishing the PCIe/NVMe inventory and every call queues behind the mapper.
+
+Resolve each service once, cache each value on first read, and keep the copy
+current with a PropertiesChanged match on the two settings objects (dropped
+wholesale if xyz.openbmc_project.Settings changes owner). Reads are then
+answered without D-Bus, and writes that would not change the value -- most of
+the BIOS's all-zero clear -- are skipped. A per-property generation counter
+stops a read or write whose reply raced a change from storing a stale value.
+
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -13,6 +13,7 @@
+ #include <phosphor-logging/elog-errors.hpp>
+ #include <phosphor-logging/lg2.hpp>
+ #include <sdbusplus/bus.hpp>
++#include <sdbusplus/bus/match.hpp>
+ #include <sdbusplus/message/types.hpp>
+ #include <sdbusplus/server/object.hpp>
+ #include <sdbusplus/timer.hpp>
+@@ -41,9 +42,11 @@
+ #include <chrono>
+ #include <cstring>
+ #include <filesystem>
++#include <functional>
+ #include <fstream>
+ #include <future>
+ #include <map>
++#include <memory>
+ #include <sstream>
+ #include <string>
+ 
+@@ -1661,6 +1664,192 @@
+ 
+ } // namespace boot_options
+ 
++/*
++ * Boot settings cache.
++ *
++ * The BIOS reads these properties over KCS during POST and has a hard time
++ * budget for every reply: on this board OpenOobPkg's KCS transport (which
++ * also carries AMI's own IPMI traffic) waits roughly one to two seconds, and
++ * a reply that misses that window wedges the interface for the rest of POST.
++ * Answering Get System Boot Options parameter 5 used to cost twelve
++ * sequential D-Bus round trips -- an ObjectMapper GetObject plus a Settings
++ * Get for each of six properties. That is about 165 ms on an idle BMC, but it
++ * was measured at 5.25 s at the moment the BIOS asks, because p2a-inventory-
++ * monitor republishes the whole PCIe/NVMe inventory then and every one of
++ * those calls queues behind the mapper. The BIOS gave up on the reply, the
++ * interface wedged, and the boot override was silently ignored.
++ *
++ * The values live in xyz.openbmc_project.Settings and only change when
++ * somebody sets them, which that daemon announces with PropertiesChanged. So
++ * keep a copy: resolve each service once, fill each value on first read, and
++ * let a PropertiesChanged match on the two objects keep the copy current.
++ * Reads are then answered without touching D-Bus at all, and writes that
++ * would not change anything (most of the BIOS's all-zero clear) are skipped.
++ *
++ * Every property change bumps a per-property generation. A read or write that
++ * raced a change -- its reply processed after the signal -- does not store its
++ * now-stale result. A Settings restart drops everything.
++ */
++namespace boot_settings_cache
++{
++
++std::map<std::string, std::string> services;
++std::map<std::string, ipmi::Value> values;
++std::map<std::string, uint64_t> generations;
++std::map<std::string, std::unique_ptr<sdbusplus::bus::match_t>> matches;
++
++static std::string serviceKey(const std::string& path, const std::string& intf)
++{
++    return path + '\n' + intf;
++}
++
++static std::string valueKey(const std::string& path, const std::string& intf,
++                            const std::string& prop)
++{
++    return path + '\n' + intf + '\n' + prop;
++}
++
++static void forget(const std::string& prefix)
++{
++    std::erase_if(services, [&prefix](const auto& kv) {
++        return kv.first.starts_with(prefix);
++    });
++    std::erase_if(values, [&prefix](const auto& kv) {
++        return kv.first.starts_with(prefix);
++    });
++}
++
++static void watch(const std::string& name, const std::string& rule,
++                  std::function<void(sdbusplus::message_t&)> callback)
++{
++    if (matches.contains(name))
++    {
++        return;
++    }
++    matches.emplace(name, std::make_unique<sdbusplus::bus::match_t>(
++                              *getSdBus(), rule.c_str(), std::move(callback)));
++}
++
++static void watchPath(const std::string& path)
++{
++    watch("props:" + path,
++          "type='signal',interface='org.freedesktop.DBus.Properties',"
++          "member='PropertiesChanged',path='" +
++              path + "'",
++          [path](sdbusplus::message_t& msg) {
++              std::string intf;
++              std::map<std::string, ipmi::Value> changed;
++              try
++              {
++                  msg.read(intf, changed);
++              }
++              catch (const std::exception&)
++              {
++                  // Undecodable: never risk keeping a stale copy.
++                  forget(path + '\n');
++                  return;
++              }
++              for (const auto& [prop, value] : changed)
++              {
++                  const auto key = valueKey(path, intf, prop);
++                  ++generations[key];
++                  if (auto it = values.find(key); it != values.end())
++                  {
++                      it->second = value;
++                  }
++              }
++          });
++}
++
++static void watchOwner(const std::string& service)
++{
++    watch("owner:" + service,
++          sdbusplus::bus::match::rules::nameOwnerChanged(service),
++          [](sdbusplus::message_t&) {
++              // The settings daemon restarted or went away.
++              services.clear();
++              values.clear();
++          });
++}
++
++static boost::system::error_code getService(ipmi::Context::ptr& ctx,
++                                            const std::string& intf,
++                                            const std::string& path,
++                                            std::string& service)
++{
++    const auto key = serviceKey(path, intf);
++    if (auto it = services.find(key); it != services.end())
++    {
++        service = it->second;
++        return {};
++    }
++    boost::system::error_code ec = ipmi::getService(ctx, intf, path, service);
++    if (!ec)
++    {
++        // Arm the matches before any value is cached, so no change can slip
++        // between the first read and the subscription.
++        watchPath(path);
++        watchOwner(service);
++        services.insert_or_assign(key, service);
++    }
++    return ec;
++}
++
++template <typename T>
++static boost::system::error_code getProperty(
++    ipmi::Context::ptr& ctx, const std::string& service,
++    const std::string& path, const std::string& intf, const std::string& prop,
++    T& value)
++{
++    const auto key = valueKey(path, intf, prop);
++    if (auto it = values.find(key); it != values.end())
++    {
++        if (const auto* cached = std::get_if<T>(&it->second))
++        {
++            value = *cached;
++            return {};
++        }
++    }
++    const uint64_t before = generations[key];
++    boost::system::error_code ec =
++        ipmi::getDbusProperty(ctx, service, path, intf, prop, value);
++    if (ec)
++    {
++        forget(serviceKey(path, intf));
++    }
++    else if (generations[key] == before)
++    {
++        values.insert_or_assign(key, ipmi::Value(value));
++    }
++    return ec;
++}
++
++static boost::system::error_code setProperty(
++    ipmi::Context::ptr& ctx, const std::string& service,
++    const std::string& path, const std::string& intf, const std::string& prop,
++    const ipmi::Value& value)
++{
++    const auto key = valueKey(path, intf, prop);
++    if (auto it = values.find(key); it != values.end() && it->second == value)
++    {
++        return {};
++    }
++    const uint64_t before = generations[key];
++    boost::system::error_code ec =
++        ipmi::setDbusProperty(ctx, service, path, intf, prop, value);
++    if (ec)
++    {
++        forget(serviceKey(path, intf));
++    }
++    else if (generations[key] == before)
++    {
++        values.insert_or_assign(key, value);
++    }
++    return ec;
++}
++
++} // namespace boot_settings_cache
++
+ /** @brief Get the property value for boot source
+  *  @param[in] ctx - context pointer
+  *  @param[out] source - boot source value
+@@ -1671,11 +1860,11 @@
+     using namespace chassis::internal;
+     std::string result;
+     std::string service;
+-    boost::system::error_code ec = getService(ctx, ControlBootSource::interface,
++    boost::system::error_code ec = boot_settings_cache::getService(ctx, ControlBootSource::interface,
+                                               bootSettingsPath, service);
+     if (!ec)
+     {
+-        ec = ipmi::getDbusProperty(
++        ec = boot_settings_cache::getProperty(
+             ctx, service, bootSettingsPath, ControlBootSource::interface,
+             ControlBootSource::property_names::boot_source, result);
+         if (!ec)
+@@ -1698,11 +1887,11 @@
+ {
+     using namespace chassis::internal;
+     std::string service;
+-    boost::system::error_code ec = getService(ctx, ControlBootSource::interface,
++    boost::system::error_code ec = boot_settings_cache::getService(ctx, ControlBootSource::interface,
+                                               bootSettingsPath, service);
+     if (!ec)
+     {
+-        ec = ipmi::setDbusProperty(
++        ec = boot_settings_cache::setProperty(
+             ctx, service, bootSettingsPath, ControlBootSource::interface,
+             ControlBootSource::property_names::boot_source,
+             convertForMessage(source));
+@@ -1726,10 +1915,10 @@
+     std::string result;
+     std::string service;
+     boost::system::error_code ec =
+-        getService(ctx, ControlBootMode::interface, bootSettingsPath, service);
++        boot_settings_cache::getService(ctx, ControlBootMode::interface, bootSettingsPath, service);
+     if (!ec)
+     {
+-        ec = ipmi::getDbusProperty(
++        ec = boot_settings_cache::getProperty(
+             ctx, service, bootSettingsPath, ControlBootMode::interface,
+             ControlBootMode::property_names::boot_mode, result);
+         if (!ec)
+@@ -1752,10 +1941,10 @@
+     using namespace chassis::internal;
+     std::string service;
+     boost::system::error_code ec =
+-        getService(ctx, ControlBootMode::interface, bootSettingsPath, service);
++        boot_settings_cache::getService(ctx, ControlBootMode::interface, bootSettingsPath, service);
+     if (!ec)
+     {
+-        ec = ipmi::setDbusProperty(
++        ec = boot_settings_cache::setProperty(
+             ctx, service, bootSettingsPath, ControlBootMode::interface,
+             ControlBootMode::property_names::boot_mode,
+             convertForMessage(mode));
+@@ -1779,7 +1968,7 @@
+     std::string result;
+     std::string service;
+     boost::system::error_code ec =
+-        getService(ctx, ControlBootType::interface, bootSettingsPath, service);
++        boot_settings_cache::getService(ctx, ControlBootType::interface, bootSettingsPath, service);
+ 
+     // Don't throw error if BootType interface is not present.
+     // This interface is not relevant for some Host architectures
+@@ -1788,7 +1977,7 @@
+     type = Type::Types::EFI;
+     if (!ec)
+     {
+-        ec = ipmi::getDbusProperty(
++        ec = boot_settings_cache::getProperty(
+             ctx, service, bootSettingsPath, ControlBootType::interface,
+             ControlBootType::property_names::boot_type, result);
+         if (ec)
+@@ -1812,10 +2001,10 @@
+     using namespace chassis::internal;
+     std::string service;
+     boost::system::error_code ec =
+-        getService(ctx, ControlBootType::interface, bootSettingsPath, service);
++        boot_settings_cache::getService(ctx, ControlBootType::interface, bootSettingsPath, service);
+     if (!ec)
+     {
+-        ec = ipmi::setDbusProperty(
++        ec = boot_settings_cache::setProperty(
+             ctx, service, bootSettingsPath, ControlBootType::interface,
+             ControlBootType::property_names::boot_type,
+             convertForMessage(type));
+@@ -1843,10 +2032,10 @@
+     std::string result;
+     std::string service;
+     boost::system::error_code ec =
+-        getService(ctx, ObjectEnable::interface, bootSettingsPath, service);
++        boot_settings_cache::getService(ctx, ObjectEnable::interface, bootSettingsPath, service);
+     if (!ec)
+     {
+-        ec = ipmi::getDbusProperty(
++        ec = boot_settings_cache::getProperty(
+             ctx, service, bootSettingsPath, ObjectEnable::interface,
+             ObjectEnable::property_names::enabled, enable);
+         if (!ec)
+@@ -1869,10 +2058,10 @@
+     using namespace chassis::internal;
+     std::string service;
+     boost::system::error_code ec =
+-        getService(ctx, ObjectEnable::interface, bootSettingsPath, service);
++        boot_settings_cache::getService(ctx, ObjectEnable::interface, bootSettingsPath, service);
+     if (!ec)
+     {
+-        ec = ipmi::setDbusProperty(
++        ec = boot_settings_cache::setProperty(
+             ctx, service, bootSettingsPath, ObjectEnable::interface,
+             ObjectEnable::property_names::enabled, enable);
+         if (!ec)
+@@ -1895,11 +2084,11 @@
+     using namespace chassis::internal;
+     std::string result;
+     std::string service;
+-    boost::system::error_code ec = getService(ctx, ObjectEnable::interface,
++    boost::system::error_code ec = boot_settings_cache::getService(ctx, ObjectEnable::interface,
+                                               bootSettingsOneTimePath, service);
+     if (!ec)
+     {
+-        ec = ipmi::getDbusProperty(
++        ec = boot_settings_cache::getProperty(
+             ctx, service, bootSettingsOneTimePath, ObjectEnable::interface,
+             ObjectEnable::property_names::enabled, onetime);
+         if (!ec)
+@@ -1921,11 +2110,11 @@
+ {
+     using namespace chassis::internal;
+     std::string service;
+-    boost::system::error_code ec = getService(ctx, ObjectEnable::interface,
++    boost::system::error_code ec = boot_settings_cache::getService(ctx, ObjectEnable::interface,
+                                               bootSettingsOneTimePath, service);
+     if (!ec)
+     {
+-        ec = ipmi::setDbusProperty(
++        ec = boot_settings_cache::setProperty(
+             ctx, service, bootSettingsOneTimePath, ObjectEnable::interface,
+             ObjectEnable::property_names::enabled, onetime);
+         if (!ec)
+@@ -1948,10 +2137,10 @@
+     using namespace chassis::internal;
+     std::string service;
+     boost::system::error_code ec =
+-        getService(ctx, ControlBootFlags::interface, bootSettingsPath, service);
++        boot_settings_cache::getService(ctx, ControlBootFlags::interface, bootSettingsPath, service);
+     if (!ec)
+     {
+-        ec = ipmi::getDbusProperty(
++        ec = boot_settings_cache::getProperty(
+             ctx, service, bootSettingsPath, ControlBootFlags::interface,
+             ControlBootFlags::property_names::cmos_clear, value);
+         if (!ec)
+@@ -1974,10 +2163,10 @@
+     using namespace chassis::internal;
+     std::string service;
+     boost::system::error_code ec =
+-        getService(ctx, ControlBootFlags::interface, bootSettingsPath, service);
++        boot_settings_cache::getService(ctx, ControlBootFlags::interface, bootSettingsPath, service);
+     if (!ec)
+     {
+-        ec = ipmi::setDbusProperty(
++        ec = boot_settings_cache::setProperty(
+             ctx, service, bootSettingsPath, ControlBootFlags::interface,
+             ControlBootFlags::property_names::cmos_clear, value);
+         if (!ec)
