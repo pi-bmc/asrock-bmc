@@ -202,6 +202,33 @@ STATIC EFI_GUID      mAppliedVarGuid = {
 STATIC BOOLEAN  mOobDone      = FALSE;
 STATIC BOOLEAN  mOobResetDone = FALSE;
 
+/* Failed runs tolerated per boot before every retry path stands down.
+
+   Each run executes at TPL_CALLBACK (timer, protocol notify, EndOfDxe,
+   ReadyToBoot) and a failed KCS exchange spends a full IpmiKcsLib timeout
+   busy-waiting, which is CPU taken directly from BDS. Uncapped, a wedged KCS
+   turned the 2 s retry timer into a loop that spun for most of every period,
+   and the 0x60/0x6C pattern on port 80 looked like a hang. The exchange is not
+   boot-critical: standing down costs one boot without fresh BIOS-config data,
+   and the next boot tries again. */
+#define OOB_MAX_FAILED_RUNS  3u
+
+STATIC BOOLEAN  mOobGaveUp     = FALSE;
+STATIC UINT32   mOobFailedRuns = 0;
+
+STATIC
+VOID
+OobRunFailed (
+  VOID
+  )
+{
+  mOobFailedRuns++;
+  if (mOobFailedRuns >= OOB_MAX_FAILED_RUNS) {
+    mOobGaveUp = TRUE;
+    OobTelemetryFlag (OOB_TLM_GAVE_UP);
+  }
+}
+
 /* ── CRC32 (zlib / boost::crc_32_type — what the BMC checks against) ──────── */
 STATIC CONST UINT32  mCrcNibble[16] = {
   0x00000000, 0x1DB71064, 0x3B6E20C8, 0x26D930AC,
@@ -337,8 +364,13 @@ OobGetInfo (
   Skips the transfer entirely when the BMC already reports a valid payload of
   this type with the same size and CRC32.
 
-  @retval EFI_SUCCESS       Transferred, or already present (see *Skipped).
-  @retval EFI_DEVICE_ERROR  The BMC rejected a step; the transfer was aborted.
+  @retval EFI_SUCCESS         Transferred, or already present (see *Skipped).
+  @retval EFI_PROTOCOL_ERROR  The BMC answered but declined a step; the
+                              transfer was aborted.
+  @retval other               The KCS exchange itself failed (the status from
+                              IpmiKcsLib). The BMC was not heard from, so the
+                              caller must not assume it can report the failure
+                              over the same channel.
 **/
 STATIC EFI_STATUS
 OobSendPayload (
@@ -357,6 +389,7 @@ OobSendPayload (
   UINT8             Cc  = 0xFF;
   UINT32            ResId;
   UINT32            Off;
+  EFI_STATUS        Status;
 
   *Skipped = FALSE;
 
@@ -383,13 +416,13 @@ OobSendPayload (
   Body[1] = Type;
   CopyMem (&Body[2], &Start, sizeof (Start));
   RspLen = sizeof (Rsp);
-  if (EFI_ERROR (OobCmd (CMD_SET_PAYLOAD, Body, 2 + sizeof (Start),
-                         Rsp, sizeof (Rsp), &RspLen, &Cc)))
-  {
-    return EFI_DEVICE_ERROR;
+  Status = OobCmd (CMD_SET_PAYLOAD, Body, 2 + sizeof (Start),
+                   Rsp, sizeof (Rsp), &RspLen, &Cc);
+  if (EFI_ERROR (Status)) {
+    return Status;
   }
   if ((Cc != 0) || (RspLen < 4)) {
-    return EFI_DEVICE_ERROR;
+    return EFI_PROTOCOL_ERROR;
   }
   CopyMem (&ResId, Rsp, sizeof (ResId));
 
@@ -412,9 +445,13 @@ OobSendPayload (
     CopyMem (&Body[18], Data + Off, Chunk);
 
     RspLen = sizeof (Rsp);
-    if (EFI_ERROR (OobCmd (CMD_SET_PAYLOAD, Body, 18 + Chunk,
-                           Rsp, sizeof (Rsp), &RspLen, &Cc)) || (Cc != 0))
-    {
+    Status = OobCmd (CMD_SET_PAYLOAD, Body, 18 + Chunk,
+                     Rsp, sizeof (Rsp), &RspLen, &Cc);
+    if (EFI_ERROR (Status)) {
+      goto Abort;
+    }
+    if (Cc != 0) {
+      Status = EFI_PROTOCOL_ERROR;
       goto Abort;
     }
     Off += Chunk;
@@ -425,21 +462,27 @@ OobSendPayload (
   Body[1] = Type;
   CopyMem (&Body[2], &ResId, 4);
   RspLen = sizeof (Rsp);
-  if (EFI_ERROR (OobCmd (CMD_SET_PAYLOAD, Body, 6,
-                         Rsp, sizeof (Rsp), &RspLen, &Cc)) || (Cc != 0))
-  {
+  Status = OobCmd (CMD_SET_PAYLOAD, Body, 6,
+                   Rsp, sizeof (Rsp), &RspLen, &Cc);
+  if (EFI_ERROR (Status)) {
+    goto Abort;
+  }
+  if (Cc != 0) {
+    Status = EFI_PROTOCOL_ERROR;
     goto Abort;
   }
   return EFI_SUCCESS;
 
 Abort:
   /* Leave no half-open session behind: the BMC keeps one transfer slot and a
-     stale reservation would reject the next boot's push too. */
+     stale reservation would reject the next boot's push too. Attempted even
+     after a transport failure, because IpmiKcsLib returns the interface to
+     IDLE when an exchange fails, so the next command can still get through. */
   Body[0] = XFER_ABORT;
   Body[1] = Type;
   RspLen  = sizeof (Rsp);
   OobCmd (CMD_SET_PAYLOAD, Body, 2, Rsp, sizeof (Rsp), &RspLen, &Cc);
-  return EFI_DEVICE_ERROR;
+  return Status;
 }
 
 /**
@@ -859,26 +902,27 @@ BiosCfgOobRun (
   UINT32      LastGen = 0;
   UINTN       LastGenSize = sizeof (LastGen);
   UINT32      Attr = 0;
+  EFI_STATUS  Status;
 
-  if (mOobDone) {
+  if (mOobDone || mOobGaveUp) {
     return;
   }
   OobPostCode (0x60);
 
   /* Announce capabilities first, exactly as the previous driver did, so a BMC
      that has persisted the capability byte sees no change. A failure here
-     means KCS is not usable yet — retry on the next tick rather than
-     half-completing the exchange. */
+     means KCS is not usable — retry on a later trigger rather than
+     half-completing the exchange, up to OOB_MAX_FAILED_RUNS. */
   Cap[0] = OOB_CAPABILITY;
   Cap[1] = 0;
   Cap[2] = 0;
   Cap[3] = 0;
-  if (EFI_ERROR (OobCmd (CMD_SET_BIOS_CAP, Cap, sizeof (Cap),
-                         NULL, 0, &RspLen, &Cc)))
-  {
+  Status = OobCmd (CMD_SET_BIOS_CAP, Cap, sizeof (Cap), NULL, 0, &RspLen, &Cc);
+  if (EFI_ERROR (Status)) {
     OobPostCode (0x6C);
-    OobTelemetryDetail (0, EFI_DEVICE_ERROR, Cc);
+    OobTelemetryDetail (0, Status, Cc);
     OobTelemetryFlag (OOB_TLM_KCS_FAIL);
+    OobRunFailed ();
     return;
   }
   OobTelemetryDetail (0, EFI_SUCCESS, Cc);
@@ -920,13 +964,19 @@ BiosCfgOobRun (
 
   /* 2. Schema. Static firmware metadata, so this is skipped on every boot
         after the first — the BMC is asked what it holds before we send. */
-  if (EFI_ERROR (OobSendPayload (PAYLOAD_SCHEMA, mBiosCfgSchema,
-                                 mBiosCfgSchemaSize, mBiosCfgSchemaCrc32,
-                                 &Skipped)))
-  {
+  Status = OobSendPayload (PAYLOAD_SCHEMA, mBiosCfgSchema, mBiosCfgSchemaSize,
+                           mBiosCfgSchemaCrc32, &Skipped);
+  if (EFI_ERROR (Status)) {
     OobPostCode (0x6D);
+    OobTelemetryDetail (0, Status, Cc);
     OobTelemetryFlag (OOB_TLM_XFER_FAIL);
-    ReportOobFailure (OOB_FAIL_SCHEMA_XFER);
+    /* Only a BMC that answered and declined can take a SEL entry. After a
+       transport failure the event would ride the same failed channel and
+       cost another full KCS timeout at TPL_CALLBACK for nothing. */
+    if (Status == EFI_PROTOCOL_ERROR) {
+      ReportOobFailure (OOB_FAIL_SCHEMA_XFER);
+    }
+    OobRunFailed ();
     return;
   }
   OobPostCode (Skipped ? 0x65 : 0x64);
@@ -937,19 +987,24 @@ BiosCfgOobRun (
     OobPostCode (0x6D);
     OobTelemetryFlag (OOB_TLM_DATA_MISSING);
     ReportOobFailure (OOB_FAIL_SNAPSHOT_BUILD);
+    OobRunFailed ();
     return;
   }
   OobPostCode (0x61);
   OobTelemetryDetail (SnapLen, EFI_SUCCESS, Cc);
   OobTelemetryFlag (OOB_TLM_DATA_FOUND);
 
-  if (EFI_ERROR (OobSendPayload (PAYLOAD_SNAPSHOT, Snap, SnapLen,
-                                 Crc32 (Snap, SnapLen), &Skipped)))
-  {
+  Status = OobSendPayload (PAYLOAD_SNAPSHOT, Snap, SnapLen,
+                           Crc32 (Snap, SnapLen), &Skipped);
+  if (EFI_ERROR (Status)) {
     FreePool (Snap);
     OobPostCode (0x6D);
+    OobTelemetryDetail (SnapLen, Status, Cc);
     OobTelemetryFlag (OOB_TLM_XFER_FAIL);
-    ReportOobFailure (OOB_FAIL_SNAPSHOT_XFER);
+    if (Status == EFI_PROTOCOL_ERROR) {
+      ReportOobFailure (OOB_FAIL_SNAPSHOT_XFER);
+    }
+    OobRunFailed ();
     return;
   }
   FreePool (Snap);
@@ -968,9 +1023,13 @@ BiosCfgOobRun (
    that coupling are gone — the transport now comes from IpmiKcsLib and the
    driver arms its own events below.
 
-   The retry timer exists because the BMC is frequently still booting when DXE
-   starts, so the first attempt often fails on KCS not being ready. 20 s period,
-   600 ticks, and it stands down as soon as the exchange completes. */
+   The retry timer is a backstop for the event hooks. Its period is 2 s:
+   SetTimer takes 100 ns units, so 20,000,000 is 2 s (an older comment here
+   said 20 s). 600 ticks is therefore 20 minutes. It stands down as soon as the
+   exchange completes, or once OOB_MAX_FAILED_RUNS failures have accumulated
+   from any trigger. */
+
+#define OOB_RETRY_PERIOD_100NS  20000000ULL   /* 2 s */
 
 STATIC UINTN      mOobTicks = 0;
 STATIC EFI_EVENT  mOobTimer = NULL;
@@ -1050,7 +1109,7 @@ OnOobTimer (
   BiosCfgOobRun ();
   mOobTicks++;
 
-  if (mOobDone || (mOobTicks > 600)) {
+  if (mOobDone || mOobGaveUp || (mOobTicks > 600)) {
     gBS->SetTimer (Event, TimerCancel, 0);
     gBS->CloseEvent (Event);
     mOobTimer = NULL;
@@ -1075,8 +1134,10 @@ BiosCfgOobEntry (
 {
   EFI_EVENT  Event;
 
-  mOobDone      = FALSE;
-  mOobResetDone = FALSE;
+  mOobDone       = FALSE;
+  mOobResetDone  = FALSE;
+  mOobGaveUp     = FALSE;
+  mOobFailedRuns = 0;
 
   OobTelemetryInit (L"OobBiosCfg");
   OobTelemetryFlag (OOB_TLM_ENTRY);
@@ -1104,7 +1165,7 @@ BiosCfgOobEntry (
                          &mOobTimer
                          )))
   {
-    if (!EFI_ERROR (gBS->SetTimer (mOobTimer, TimerPeriodic, 20000000ULL))) {
+    if (!EFI_ERROR (gBS->SetTimer (mOobTimer, TimerPeriodic, OOB_RETRY_PERIOD_100NS))) {
       OobTelemetryFlag (OOB_TLM_TIMER_ARMED);
     }
   }

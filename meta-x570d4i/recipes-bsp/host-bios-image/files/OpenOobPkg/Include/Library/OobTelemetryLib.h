@@ -56,6 +56,14 @@
 // two explanations call for completely different fixes.
 //
 #define OOB_TLM_TIMER_ARMED      0x00001000u
+//
+// The driver stopped retrying for the rest of this boot after repeated failed
+// exchanges with the BMC. Each retry runs at TPL_CALLBACK and can spend a full
+// KCS timeout busy-waiting, which is CPU taken from BDS, so a dead or wedged
+// BMC must cost a bounded number of attempts, not one every timer tick.
+// Distinguishes "gave up" from "never got far enough to try".
+//
+#define OOB_TLM_GAVE_UP          0x00002000u
 
 #pragma pack(1)
 typedef struct {

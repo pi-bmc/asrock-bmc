@@ -173,6 +173,16 @@ STATIC CONST UINT8 mOen[3] = { 0xCF, 0xC2, 0x00 };
 STATIC BOOLEAN mSmbiosDone = FALSE;
 STATIC BOOLEAN mInvDone    = FALSE;
 
+/* Failed SMBIOS push attempts tolerated per boot before the retries stand
+   down. Every attempt runs at TPL_CALLBACK, and a failed KCS exchange spends a
+   full IpmiKcsLib timeout busy-waiting, which is CPU taken from BDS. Uncapped,
+   a wedged KCS turned the 2 s timer into the 0x77/0x7A loop on port 80, and the
+   host looked hung. The SMBIOS push is not boot-critical; the BMC keeps the
+   table it already has and the next boot tries again. */
+#define SMBIOS_MAX_FAILED_PUSHES  3u
+STATIC BOOLEAN mSmbiosGaveUp      = FALSE;
+STATIC UINT32  mSmbiosFailedPushes = 0;
+
 STATIC UINT8   mLastCC = 0xFF;
 
 
@@ -230,22 +240,30 @@ BlobCmd (UINT8 sub, CONST UINT8 *pay, UINT32 paylen,
    the CRC of the table we just built — so any hardware change (DIMM/CPU/FRU)
    alters the table and forces a fresh push.  Upstream (and a fresh BMC with no
    smbios2) reports failure -> push.  Response data (raw[8..]):
-   blobState(2) size(4) metaLen(1) metadata(=CRC LE, 2). */
-STATIC BOOLEAN
-BmcHasSmbios (UINT16 ExpectCrc)
+   blobState(2) size(4) metaLen(1) metadata(=CRC LE, 2).
+
+   Returns the KCS status, so a transport failure is told apart from "the BMC
+   answered and does not hold this table" (*Has = FALSE, EFI_SUCCESS). The
+   caller must not follow a transport failure with the push: it would ride the
+   same failed channel and cost a second full timeout. */
+STATIC EFI_STATUS
+BmcHasSmbios (UINT16 ExpectCrc, BOOLEAN *Has)
 {
   EFI_STATUS s; UINT8 cc; UINT8 pay[16]; UINT32 plen = 0, rlen = 0; UINT8 rsp[16];
   UINT16 state, mdCrc; UINT8 mdLen;
 
+  *Has = FALSE;
   for (UINT32 i = 0; mBlobId[i]; i++) pay[plen++] = (UINT8)mBlobId[i];
   pay[plen++] = 0;
   s = BlobCmd (SUB_STAT, pay, plen, rsp, sizeof (rsp), &rlen, &cc);
-  if (EFI_ERROR (s) || cc != 0 || rlen < 9) return FALSE;
+  if (EFI_ERROR (s)) return s;
+  if (cc != 0 || rlen < 9) return EFI_SUCCESS;
   state = (UINT16)(rsp[0] | ((UINT16)rsp[1] << 8));
   mdLen = rsp[6];                              /* rsp[2..5] = size (unused) */
-  if (!(state & BLOB_STATE_COMMITTED) || mdLen < 2) return FALSE;
+  if (!(state & BLOB_STATE_COMMITTED) || mdLen < 2) return EFI_SUCCESS;
   mdCrc = (UINT16)(rsp[7] | ((UINT16)rsp[8] << 8));
-  return (BOOLEAN)(mdCrc == ExpectCrc);
+  *Has = (BOOLEAN)(mdCrc == ExpectCrc);
+  return EFI_SUCCESS;
 }
 
 STATIC EFI_STATUS
@@ -669,11 +687,22 @@ BuildBlob (UINT8 **Out, UINT32 *OutLen)
      0x80 = inventory aborted — AST2500 VGA function not found
      0x81 = inventory found nothing to report (no PCIe, no drives) */
 
+/* Count one failed push and stand the retries down at the cap. */
+STATIC VOID SmbiosPushFailed (VOID)
+{
+  mSmbiosFailedPushes++;
+  if (mSmbiosFailedPushes >= SMBIOS_MAX_FAILED_PUSHES) {
+    mSmbiosGaveUp = TRUE;
+    OobTelemetryFlag (OOB_TLM_GAVE_UP);
+  }
+}
+
 STATIC VOID DoPush (VOID)
 {
   EFI_STATUS s;
+  BOOLEAN    Has;
 
-  if (mSmbiosDone) return;
+  if (mSmbiosDone || mSmbiosGaveUp) return;
   UINT8 *Buf = NULL; UINT32 Len = 0;
   if (EFI_ERROR (BuildBlob (&Buf, &Len))) {
     OobPostCode (0x78);
@@ -690,12 +719,15 @@ STATIC VOID DoPush (VOID)
   /* Build first, then skip the KCS transfer only if the BMC already holds a
      byte-identical table (matching CRC).  A hardware change alters the table,
      so the CRC differs and we re-push. */
-  if (BmcHasSmbios (GenCrc (Buf, Len))) {
+  s = BmcHasSmbios (GenCrc (Buf, Len), &Has);
+  if (!EFI_ERROR (s) && Has) {
     mSmbiosDone = TRUE; FreePool (Buf); OobPostCode (0x7B);
     OobTelemetryFlag (OOB_TLM_XFER_SKIP);
     return;
   }
-  s = SendViaBlob (Buf, Len);
+  if (!EFI_ERROR (s)) {
+    s = SendViaBlob (Buf, Len);
+  }
   if (!EFI_ERROR (s)) {
     mSmbiosDone = TRUE; OobPostCode (0x79);
     OobTelemetryDetail (Len, s, mLastCC);
@@ -704,6 +736,7 @@ STATIC VOID DoPush (VOID)
     OobPostCode (0x7A);
     OobTelemetryDetail (Len, s, mLastCC);
     OobTelemetryFlag (OOB_TLM_XFER_FAIL);
+    SmbiosPushFailed ();
   }
   FreePool (Buf);
 }
@@ -1178,6 +1211,9 @@ STATIC VOID EFIAPI OnReadyToBoot (IN EFI_EVENT E, IN VOID *C)
 STATIC VOID EFIAPI OnEndOfDxe (IN EFI_EVENT E, IN VOID *C)
 { OobPostCode (0x75); OobTelemetryFlag (OOB_TLM_ENDOFDXE); DoWork (); }
 
+/* SetTimer takes 100 ns units: 20,000,000 is 2 s, so 600 ticks is 20 min. */
+#define SMBIOS_RETRY_PERIOD_100NS  20000000ULL
+
 STATIC UINTN     mTicks = 0;
 STATIC EFI_EVENT mTimer = NULL;
 
@@ -1189,7 +1225,7 @@ OnTimer (IN EFI_EVENT Event, IN VOID *Context)
   OobTelemetryFlag (OOB_TLM_TIMER);
   DoWork ();
   mTicks++;
-  if ((mSmbiosDone && mInvDone) || mTicks > 600) {
+  if (((mSmbiosDone || mSmbiosGaveUp) && mInvDone) || mTicks > 600) {
     gBS->SetTimer (Event, TimerCancel, 0);
     gBS->CloseEvent (Event);
     mTimer = NULL;
@@ -1236,7 +1272,7 @@ SmbiosBmcPushEntry (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
                       &gEfiEndOfDxeEventGroupGuid, &Event);
   if (!EFI_ERROR (gBS->CreateEvent (EVT_TIMER | EVT_NOTIFY_SIGNAL, TPL_CALLBACK,
                                     OnTimer, NULL, &mTimer))) {
-    if (!EFI_ERROR (gBS->SetTimer (mTimer, TimerPeriodic, 20000000ULL))) {
+    if (!EFI_ERROR (gBS->SetTimer (mTimer, TimerPeriodic, SMBIOS_RETRY_PERIOD_100NS))) {
       OobTelemetryFlag (OOB_TLM_TIMER_ARMED);
     }
   }
