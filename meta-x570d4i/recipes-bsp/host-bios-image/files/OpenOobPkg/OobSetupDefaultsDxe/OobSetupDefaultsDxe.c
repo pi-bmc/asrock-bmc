@@ -12,19 +12,26 @@
   Above 4G Decoding = Enabled (PCI_COMMON offset 3, "PCID001")
 
     The stock default is 0x00. With a large-BAR card installed — the Tesla K80
-    this board is built around is dual-GK210 with a ~12 GiB prefetchable BAR per
+    this board used to carry is dual-GK210 with a multi-GiB prefetchable BAR per
     GPU — the BIOS cannot fit the apertures below 4 GiB and wedges just after
     PCI resource assignment, terminal at POST 0x99 with no console. Enabling it
     is what cleared that hang, and it is also what finally let the host
     enumerate the USB gadget the Redfish Host Interface depends on.
 
+    The slot now holds a Tesla T4 16GB, whose BARs total ~300 MiB (BAR0 16 MiB,
+    64-bit prefetchable BAR1 256 MiB and BAR3 32 MiB) and fit below 4 GiB, so
+    the T4 alone would POST with this off. It stays enforced: it moves the T4's
+    64-bit BARs out of the 32-bit MMIO window shared with the onboard devices,
+    and without it any large-BAR card brings the terminal hang straight back.
+
   SR-IOV Support = Disabled (PCI_COMMON offset 5, "PCID002")
 
-    Stock default is already 0x00 and nothing here needs it. It is enforced
-    rather than assumed because it shares the Above-4G resource path: SR-IOV
-    makes each capable function request its full VF BAR window up front, which
-    is exactly the pressure that produced the hang above. Pinning it off keeps
-    the failure from returning by a second route.
+    Stock default is already 0x00 and nothing here needs it. The T4 has no
+    SR-IOV at all (Turing vGPU uses mediated devices). It is enforced rather than
+    assumed because it shares the Above-4G resource path: SR-IOV makes each
+    capable function request its full VF BAR window up front, which is exactly
+    the pressure that produced the hang above. Pinning it off keeps the failure
+    from returning by a second route.
 
   Offsets and encodings come from the shipped HII decompilation
   (x570d4i2t-bios-knobs.xml), not from guesswork:

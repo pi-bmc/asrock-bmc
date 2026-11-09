@@ -143,7 +143,8 @@ OOB_INJECT_DRIVERS ?= "BiosCfgOobDxe VideoRouteDxe OobSetupDefaultsDxe"
 #     SmbiosBmcPushDxe, so /redfish/v1/Systems/system/Bios reverts to a defaults
 #     listing instead of live values (do_compile warns about this explicitly);
 #   - OobSetupDefaultsDxe stops reasserting Above 4G Decoding, which is what
-#     cleared the terminal POST 0x99 hang with the Tesla K80 installed.
+#     cleared the terminal POST 0x99 hang with the Tesla K80 installed. (The
+#     Tesla T4 now in the slot POSTs without it, but a large-BAR card would not.)
 # Only SmbiosBmcPushDxe (SMBIOS + the P2A PCIe/NVMe inventory push) survives with
 # this disabled, because it reaches flash by displacing an AMI slot instead.
 HOST_BIOS_STRIP_OOB ?= "1"
@@ -189,11 +190,32 @@ STRIPPED_ROM ?= "host-bios-${MACHINE}-2.59C-openoob.rom"
 #                         0x05 LAN2 PXE, 0x02 UEFI PXE). Both knob names share
 #                         this byte; they are the CSM and UEFI presentations of
 #                         the same setting.
-#   PCI_COMMON[3] = 0x01  Above 4G Decoding = Enabled. The Tesla K80's ~12 GiB
-#                         prefetchable BARs do not fit below 4 GiB; without this
-#                         the board wedges at POST 0x99 with no console.
-#   PCI_COMMON[5] = 0x00  SR-IOV = Disabled. Already the default; pinned because
-#                         it feeds the same resource pressure as Above 4G.
+#   PCI_COMMON[3] = 0x01  Above 4G Decoding = Enabled. A hard requirement for the
+#                         Tesla K80 this board used to carry: its multi-GiB
+#                         prefetchable BARs do not fit below 4 GiB, and without
+#                         this the board wedged at POST 0x99 with no console.
+#                         The Tesla T4 16GB that replaced it needs ~300 MiB
+#                         (BAR0 16 MiB, 64-bit prefetchable BAR1 256 MiB and BAR3
+#                         32 MiB) and would POST either way. Kept anyway: it
+#                         places the T4's 64-bit BARs above 4 GiB instead of in
+#                         the 32-bit MMIO window the onboard ASPEED, X550 and
+#                         NVMe share, and it stops a large-BAR card from
+#                         bringing the hang back.
+#   PCI_COMMON[4] = 0x00  Re-Size BAR = Disabled. Already the default; pinned
+#                         with SR-IOV so a firmware or BMC-side change cannot
+#                         quietly start resizing GPU BARs into that window.
+#   PCI_COMMON[5] = 0x00  SR-IOV = Disabled. Already the default. The T4 has no
+#                         SR-IOV (Turing vGPU uses mediated devices), and VF BAR
+#                         windows feed the same resource pressure as Above 4G.
+#
+# Deliberately NOT pinned for the T4 (verified against the real StdDefaults,
+# which differ from the knob XML's "default" attribute for both):
+#   Setup[0x01AA] IOMMU          ships Auto (0xFF). Containers (the NVIDIA GPU
+#                                Operator) do not need it; set Enabled only for
+#                                VFIO/KubeVirt passthrough.
+#   Setup[0x01EC] PCIE7 OpROM    ships Auto (0x03). It governs storage/network
+#                                option ROMs only ("can't select Video Option ROM
+#                                policy"), so it has no effect on a GPU.
 #
 # NetworkStackVar already defaults to 01/01/01 (stack, IPv4 PXE, IPv6 PXE), so
 # it needs nothing -- the entries below are asserted as a regression check and
@@ -202,6 +224,7 @@ HOST_BIOS_NVAR_DEFAULTS ?= "\
     Setup:511:0x0008:0x01 \
     Setup:511:0x01EE:0x02 \
     PCI_COMMON:8:3:0x01 \
+    PCI_COMMON:8:4:0x00 \
     PCI_COMMON:8:5:0x00 \
     NetworkStackVar:8:0:0x01 \
     NetworkStackVar:8:1:0x01 \
