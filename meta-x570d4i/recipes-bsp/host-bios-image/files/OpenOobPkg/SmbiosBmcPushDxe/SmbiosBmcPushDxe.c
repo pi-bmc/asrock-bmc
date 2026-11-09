@@ -34,17 +34,30 @@
       becomes enumerable, so unlike a timer it does not depend on the tick, and
       unlike ReadyToBoot it does not depend on BDS reaching the end.
   Consequently every notify is armed UNCONDITIONALLY and each payload guards
-  itself with its own completion flag. Do not reintroduce a shared "done" gate:
-  the previous single mDone meant a successful SMBIOS push at entry skipped
-  arming any notify at all, which would have left the inventory payload with one
-  shot at the one moment NVMe cannot exist.
+  itself with its own state. Do not reintroduce a shared "done" gate: the
+  previous single mDone meant a successful SMBIOS push at entry skipped arming
+  any notify at all, which would have left the inventory payload with one shot
+  at the one moment NVMe cannot exist.
+
+  PUSH POLICY (inventory). Every trigger re-collects, but the P2A write happens
+  only when it says something new. Each push makes the BMC republish, and that
+  republish load is what slowed ipmid's boot-option reply past the KCS timeout:
+    - before ReadyToBoot, a blob with no drives is held back, because it would
+      replace the BMC's cached inventory (drives included) with a worse one;
+    - after that, a blob is written only when the PCIe or drive count grew;
+    - BootSerial is fixed per boot, so a re-push of the same inventory is
+      byte-identical apart from SMART drift.
+  A board with NVMe therefore pushes once per controller, from the
+  NvmExpressPassThru notify. ReadyToBoot is relied on only to release the
+  drive-less blob of a board with no NVMe. If it never fires, that board keeps
+  the BMC's cached inventory for the boot.
 
   Historical note: the comments that used to assert EndOfDxe/ReadyToBoot "never
   fire on this board" date from the era when the board stalled at POST 0x99 and
   DXE never completed. Above-4G Decoding fixed that; the 2026-08-05 boot profile
   measures a ReadyToBoot->ExitBootServices window, so ReadyToBoot does fire now.
-  It is still not RELIED on here — our 0x76 marker aliases AMI's own codes, so
-  port 80 cannot prove our callback ran. The telemetry NVAR settles it.
+  Our 0x76 marker aliases AMI's own codes, so port 80 cannot prove our callback
+  ran. The telemetry NVAR settles it.
 
   SMBIOS wire protocol (validated end-to-end by SmbiosBmcPushApp):
     IPMI OEM/Group NetFn 0x2E, Cmd 0x80, OEN 0xCF 0xC2 0x00
@@ -169,9 +182,8 @@ STATIC EFI_GUID mDxeSmmReadyToLockGuid = {
 STATIC CONST CHAR8 mBlobId[] = "/smbios";
 STATIC CONST UINT8 mOen[3] = { 0xCF, 0xC2, 0x00 };
 
-/* One flag per payload. NEVER merge these — see the header. */
+/* Separate state per payload. NEVER merge these — see the header. */
 STATIC BOOLEAN mSmbiosDone = FALSE;
-STATIC BOOLEAN mInvDone    = FALSE;
 
 /* Failed SMBIOS push attempts tolerated per boot before the retries stand
    down. Every attempt runs at TPL_CALLBACK, and a failed KCS exchange spends a
@@ -182,6 +194,15 @@ STATIC BOOLEAN mInvDone    = FALSE;
 #define SMBIOS_MAX_FAILED_PUSHES  3u
 STATIC BOOLEAN mSmbiosGaveUp      = FALSE;
 STATIC UINT32  mSmbiosFailedPushes = 0;
+
+/* Inventory push state. There is no "done" latch: collection is cheap and
+   every trigger re-collects, but the P2A write happens only when it carries
+   something new (see DoInventory). */
+STATIC BOOLEAN mReadyToBoot      = FALSE;   /* ReadyToBoot has fired */
+STATIC BOOLEAN mInvPushed        = FALSE;   /* a blob was written this boot */
+STATIC UINT16  mInvPushedPcie    = 0;       /* ...with these counts */
+STATIC UINT16  mInvPushedDrives  = 0;
+STATIC UINT32  mBootSerial       = 0;       /* TSC at entry; one value per boot */
 
 STATIC UINT8   mLastCC = 0xFF;
 
@@ -685,7 +706,9 @@ BuildBlob (UINT8 **Out, UINT32 *OutLen)
      0x7E = inventory pushed OK over P2A
      0x7F = inventory P2A write failed
      0x80 = inventory aborted — AST2500 VGA function not found
-     0x81 = inventory found nothing to report (no PCIe, no drives) */
+     0x81 = inventory found nothing to report (no PCIe, no drives)
+     0x82 = inventory held back — no drives yet and ReadyToBoot not reached
+     0x83 = inventory unchanged since the last push — P2A write skipped */
 
 /* Count one failed push and stand the retries down at the cap. */
 STATIC VOID SmbiosPushFailed (VOID)
@@ -1064,9 +1087,6 @@ DoInventory (VOID)
   UINT32 BlobMax, Total;
   EFI_STATUS s;
 
-  if (mInvDone) {
-    return;
-  }
   OobPostCode (0x7C);
 
   BlobMax = sizeof (OOB_INV_HEADER)
@@ -1127,6 +1147,32 @@ DoInventory (VOID)
     return;
   }
 
+  /* Hold back a drive-less blob until ReadyToBoot. NVMe binds at BDS
+     ConnectController, so anything collected earlier is PCIe-only by
+     construction. Pushing it would replace the BMC's cached last-known-good
+     inventory, which includes the drives, with one that has none: the Drive
+     drops out of Redfish and p2a-inventory-monitor republishes, only for the
+     NvmExpressPassThru push to supersede it seconds later. That republish load
+     on the BMC is what slowed ipmid's Get Boot Options reply past the KCS
+     timeout. From ReadyToBoot on, a drive-less blob is the real answer (a board
+     with no NVMe), so it goes out. */
+  if (!mReadyToBoot && DriveN == 0) {
+    OobPostCode (0x82);
+    FreePool (Blob);
+    return;
+  }
+
+  /* Re-push only when enumeration grew. Device identity cannot otherwise change
+     within one boot, but the SMART counters (temperature above all) drift
+     between reads and would make every pass look new. Comparing counts
+     re-pushes for a second NVMe controller binding after the first, but not for
+     ReadyToBoot re-reading the same drive a few degrees warmer. */
+  if (mInvPushed && PcieN == mInvPushedPcie && DriveN == mInvPushedDrives) {
+    OobPostCode (0x83);
+    FreePool (Blob);
+    return;
+  }
+
   /* --- compact the two arrays so drive records follow PCIe records with no gap,
          then finalize the header --- */
   if (DriveN > 0) {
@@ -1141,7 +1187,10 @@ DoInventory (VOID)
   H->FormatVersion = OOB_INV_FORMAT_VERSION;
   H->HeaderSize    = sizeof (OOB_INV_HEADER);
   H->TotalSize     = Total;
-  H->BootSerial    = (UINT32)AsmReadTsc ();
+  /* One value for the whole boot, as OobInventoryBlob.h specifies. It sits
+     inside the CRC'd header, and the BMC republishes on any CRC change, so a
+     per-push TSC made every push look new even when nothing else differed. */
+  H->BootSerial    = mBootSerial;
   H->PcieRecSize   = sizeof (OOB_INV_PCIE_RECORD);
   H->DriveRecSize  = sizeof (OOB_INV_DRIVE_RECORD);
   H->PcieCount     = PcieN;
@@ -1166,13 +1215,12 @@ DoInventory (VOID)
     return;
   }
 
-  /* Only latch done once a drive has actually been reported. A PCIe-only push
-     is worth sending (the BMC gets its PCIeDevice list early) but must not end
-     the retries, or a blob captured before BDS connected the NVMe controller
-     would be the final word for the whole boot. */
-  if (DriveN > 0) {
-    mInvDone = TRUE;
-  }
+  /* Nothing latches here. The previous code stopped for good at the first push
+     carrying a drive, so a second NVMe controller binding later in BDS was
+     never reported. The count comparison above is what bounds the pushes. */
+  mInvPushed       = TRUE;
+  mInvPushedPcie   = PcieN;
+  mInvPushedDrives = DriveN;
   OobTelemetryFlag (OOB_TLM_INV_P2A_OK);
   OobPostCode (0x7E);
   FreePool (Blob);
@@ -1205,8 +1253,15 @@ ArmProtocolNotify (IN EFI_GUID *Protocol)
   (VOID)Event;
 }
 
+/* Sets mReadyToBoot first: from here on a drive-less inventory is final (see
+   DoInventory), and the flag stays set for any later notify. ReadyToBoot is
+   signalled again for each boot option tried. Those passes re-collect, but
+   only push if enumeration grew. */
 STATIC VOID EFIAPI OnReadyToBoot (IN EFI_EVENT E, IN VOID *C)
-{ OobPostCode (0x76); OobTelemetryFlag (OOB_TLM_READYTOBOOT); DoWork (); }
+{
+  mReadyToBoot = TRUE;
+  OobPostCode (0x76); OobTelemetryFlag (OOB_TLM_READYTOBOOT); DoWork ();
+}
 
 STATIC VOID EFIAPI OnEndOfDxe (IN EFI_EVENT E, IN VOID *C)
 { OobPostCode (0x75); OobTelemetryFlag (OOB_TLM_ENDOFDXE); DoWork (); }
@@ -1217,15 +1272,18 @@ STATIC VOID EFIAPI OnEndOfDxe (IN EFI_EVENT E, IN VOID *C)
 STATIC UINTN     mTicks = 0;
 STATIC EFI_EVENT mTimer = NULL;
 
+/* SMBIOS retries only. The inventory is deliberately NOT driven from here: its
+   triggers are the protocol notifies and ReadyToBoot, which fire when
+   enumeration actually changes, whereas a tick only re-sends the same thing. */
 STATIC VOID EFIAPI
 OnTimer (IN EFI_EVENT Event, IN VOID *Context)
 {
   OobPostCode (0x74);
   OobTelemetryTick ();
   OobTelemetryFlag (OOB_TLM_TIMER);
-  DoWork ();
+  DoPush ();
   mTicks++;
-  if (((mSmbiosDone || mSmbiosGaveUp) && mInvDone) || mTicks > 600) {
+  if (mSmbiosDone || mSmbiosGaveUp || mTicks > 600) {
     gBS->SetTimer (Event, TimerCancel, 0);
     gBS->CloseEvent (Event);
     mTimer = NULL;
@@ -1246,6 +1304,10 @@ SmbiosBmcPushEntry (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
   OobTelemetryFlag (OOB_TLM_ENTRY);
 
   OobPostCode (0x70);
+
+  /* The inventory blob's per-boot nonce: taken once, here, so every push in
+     this boot carries the same value (see DoInventory). */
+  mBootSerial = (UINT32)AsmReadTsc ();
 
   /* The synchronous KCS ping that used to live here is gone. It was the only
      thing this module did at entry that the two working drivers did not, and a
