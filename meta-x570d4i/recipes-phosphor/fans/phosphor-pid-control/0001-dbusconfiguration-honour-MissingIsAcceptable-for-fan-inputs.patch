@@ -1,0 +1,46 @@
+From: ASRock Rack X570D4I-2T OpenBMC port
+Subject: [PATCH] dbusconfiguration: honour MissingIsAcceptable for fan inputs
+Upstream-Status: Pending
+
+For a "fan" class PID, each input is registered with the zone under a
+paired name, fan sensor + pwm sensor (e.g. "FAN3Pwm_3"), so that one tach
+can be tied to its PWM. MissingIsAcceptable, however, is resolved to bare
+D-Bus sensor names ("FAN3"). spliceInputs() matches the two by exact
+string, so a fan listed in MissingIsAcceptable never matched, and a fan
+whose tach reads nothing still put the zone in failsafe:
+
+  Zone 0 fans, entering failsafe mode, output pwm: 100
+  Fail sensor: FAN3Pwm_3, reason: Sensor reading bad
+
+When a fan's bare name is in the list, accept its paired name as well.
+
+On the ASRock Rack X570D4I-2T, FAN3 cools only a passively cooled Tesla T4
+and is driven open-loop from the GPU temperature: FANn tach feedback is
+optional there, and the PID's feed-forward path (FFGainCoefficient 1.0)
+already ignores the measured RPM when it is missing.
+
+---
+diff --git a/dbus/dbusconfiguration.cpp b/dbus/dbusconfiguration.cpp
+index e7b0ddc9..7a69dc68 100644
+--- a/dbus/dbusconfiguration.cpp
++++ b/dbus/dbusconfiguration.cpp
+@@ -969,6 +969,19 @@ bool init(sdbusplus::bus_t& bus, boost::asio::steady_timer& timer,
+                         pwmSensorName = getSensorNameFromPath(pwmPath);
+                         std::string fanPwmIndex = fanSensorName + pwmSensorName;
+                         archivedInputSensorNames.push_back(fanPwmIndex);
++                        // A fan input is known to the zone by its paired
++                        // name (fan + pwm), but MissingIsAcceptable lists
++                        // bare D-Bus sensor names, so the two never matched
++                        // and a fan listed there still forced failsafe.
++                        // Accept the paired name too.
++                        if (std::find(missingAcceptableSensorNames.begin(),
++                                      missingAcceptableSensorNames.end(),
++                                      fanSensorName) !=
++                            missingAcceptableSensorNames.end())
++                        {
++                            missingAcceptableSensorNames.push_back(
++                                fanPwmIndex);
++                        }
+                         auto& fanConfig = sensorConfig[fanPwmIndex];
+                         fanConfig.type = pidClass;
+                         fanConfig.readPath = fanPath;

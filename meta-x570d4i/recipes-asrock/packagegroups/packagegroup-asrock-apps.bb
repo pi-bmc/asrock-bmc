@@ -30,11 +30,20 @@ SUMMARY:${PN}-system = "ASRock System"
 # an AMD AM4 board, yet both installed a multi-user.target unit
 # (phosphor-power-control.service is Restart=always). This board's power state
 # machine is x86-power-control and its PSU telemetry is supermicro-psu-monitor.
+#
+# Fan control: phosphor-pid-control (swampd) runs exactly one zone, "GPU",
+# from the entity-manager Pid / Stepwise / Pid.Zone records in x570d4i2t.json.
+# FAN3 only cools the passively-cooled Tesla T4, so its speed follows
+# "GPU Temp" (published by gpu-smbpbi-sensor from the card's SMBPBI post-box),
+# with failsafe 100% whenever the GPU is powered but unreadable. FAN1/FAN2
+# are in no zone and stay at their power-on 100%.
 RDEPENDS:${PN}-system = " \
         entity-manager \
         virtual-media \
         supermicro-psu-monitor \
         p2a-inventory-monitor \
+        gpu-smbpbi-sensor \
+        phosphor-pid-control \
         phosphor-software-manager \
         phosphor-software-manager-bios-software-update \
         smbios-mdr \

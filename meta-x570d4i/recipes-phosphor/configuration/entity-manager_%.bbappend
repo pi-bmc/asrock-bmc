@@ -40,7 +40,10 @@ do_install:append() {
     #   0/40-43 0x70  PCA9545 mux, mirrored onto its own channel buses
     #   1 0x2d/0x4c   NCT6779 + W83773G, instantiated by entity-manager
     #   2 0x3c        AMD SB-RMI (APML), answers 0x20 but NAKs everything else
-    #   4 0x4e/0x4f   NCT75 aux temp, instantiated by entity-manager
+    #   4 0x4c-0x4f   the PCIe-slot GPU (Tesla T4) on the slot SMBus. 0x4f is
+    #                 its SMBPBI post-box, read by gpu-smbpbi-sensor; 0x4c-0x4e
+    #                 are further GPU endpoints. All answer only with the host
+    #                 on. (0x4f was once taken for an onboard NCT75 "Aux Temp".)
     #   1 0x1c/0x1d     intermittent non-FRU responders. fru-device probes
     #                 0x1c, gets an ACK, then fails the FRU header read
     #                 ("failed to read bus 1 address 28 base offset 0").

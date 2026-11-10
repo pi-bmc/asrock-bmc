@@ -1,0 +1,17 @@
+[Unit]
+Description=NVIDIA GPU temperature and power over SMBPBI (GPU Temp / GPU Power)
+# phosphor-pid-control builds its zones only once every input sensor exists on
+# D-Bus, so publish "GPU Temp" before it starts. It retries if we are late,
+# but this keeps FAN3 out of a needless failsafe at boot.
+Before=phosphor-pid-control.service
+
+[Service]
+# Tesla T4 in the PCIe slot: slot SMBus is AST2500 I2C4, SMBPBI at 0x4F.
+# Thresholds are the card's own limits (nvidia-smi -q): max operating 85 C,
+# slowdown 93 C. CriticalAlarmHigh puts the GPU fan zone into failsafe.
+ExecStart=/usr/bin/gpu-smbpbi-sensor --bus 4 --address 0x4f --name GPU --warning-high 85 --critical-high 93
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
