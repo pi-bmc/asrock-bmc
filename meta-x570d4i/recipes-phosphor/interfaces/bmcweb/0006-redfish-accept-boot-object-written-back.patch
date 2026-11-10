@@ -1,0 +1,225 @@
+From: OpenBMC X570D4I-2T port <nbatkins@gmail.com>
+Subject: [PATCH] redfish: accept a Boot object written back as read
+
+Clients that set a boot override by PATCHing back the whole Boot object
+they read from /redfish/v1/Systems/system, as gofish's
+ComputerSystem.SetBoot does for bmclib (Tinkerbell's Rufio), got 400
+Bad Request, so the override never landed. bmclib then retried with
+only BootSourceOverrideTarget and BootSourceOverrideEnabled, which left
+BootSourceOverrideMode at whatever the BIOS last wrote (Legacy), and
+the UEFI netboot did not happen. Three things in the echoed object were
+refused:
+
+- BootSourceOverrideTarget@Redfish.AllowableValues (and any other
+  property annotation) failed with PropertyUnknown. The JSON reader now
+  ignores keys of the form "<Property>@<Term>" unless a handler asks
+  for one by name. Object-level annotations (a leading '@', such as
+  @Redfish.SettingsApplyTime) change what a request means and are still
+  refused unless handled; top-level @odata.* keys were already dropped.
+
+- TrustedModuleRequiredToBoot was read as a JSON bool, while the schema
+  and this service's own GET render it as the enum "Required" /
+  "Disabled", so writing back what was read failed with
+  PropertyValueTypeError. It is now read as the enum. The web UI sets
+  the TPM policy over D-Bus REST, not this property.
+
+- RemainingAutomaticRetryAttempts is read-only and failed with
+  PropertyUnknown. It is now reported as PropertyNotWritable in
+  @Message.ExtendedInfo while the rest of the request is applied; a
+  request that writes nothing else still fails with PropertyNotWritable.
+
+Everything else the GET renders under Boot (AutomaticRetryAttempts,
+AutomaticRetryConfig, StopBootOnFault, the override properties) was
+already writable.
+
+Upstream-Status: Pending
+
+--- a/redfish-core/include/utils/json_utils.hpp
++++ b/redfish-core/include/utils/json_utils.hpp
+@@ -519,6 +519,18 @@ struct PerUnpack
+     bool complete = false;
+ };
+ 
++// A property annotation ("BootSourceOverrideTarget@Redfish.AllowableValues",
++// "Members@odata.count") describes a property; it is not one, and nothing can
++// write it. Clients that PATCH back an object they read, as gofish's
++// ComputerSystem.SetBoot does with the whole Boot object, send them along.
++// Object-level annotations ("@Redfish.SettingsApplyTime") carry request
++// semantics, so a leading '@' is not one of these.
++inline bool isPropertyAnnotation(std::string_view key)
++{
++    size_t at = key.find('@');
++    return at != std::string_view::npos && at != 0;
++}
++
+ inline bool readJsonHelperObject(nlohmann::json::object_t& obj,
+                                  crow::Response& res,
+                                  std::span<PerUnpack> toUnpack)
+@@ -589,7 +601,9 @@ inline bool readJsonHelperObject(nlohmann::json::object_t& obj,
+             break;
+         }
+ 
+-        if (unpackIndex == toUnpack.size())
++        // A caller that names an annotation key still gets it; any other is
++        // ignored rather than failing the whole request.
++        if (unpackIndex == toUnpack.size() && !isPropertyAnnotation(item.first))
+         {
+             messages::propertyUnknown(res, item.first);
+             result = false;
+--- a/redfish-core/lib/systems.hpp
++++ b/redfish-core/lib/systems.hpp
+@@ -9,6 +9,7 @@
+ #include "async_resp.hpp"
+ #include "dbus_singleton.hpp"
+ #include "dbus_utility.hpp"
++#include "error_message_utils.hpp"
+ #include "error_messages.hpp"
+ #include "generated/enums/action_info.hpp"
+ #include "generated/enums/computer_system.hpp"
+@@ -1548,15 +1549,36 @@ inline void setTrustedModuleRequiredToBootCallback(
+  *
+  * @param[in] asyncResp     Shared pointer for generating response message.
+  * @param[in] computerSystemIndex Index associated with the requested system
+- * @param[in] tpmRequired   Value to set TPM Required To Boot property to.
++ * @param[in] trustedModuleRequired  "TrustedModuleRequiredToBoot" from
++ *                                   request: "Required" or "Disabled".
+  *
+  * @return None.
+  */
+ inline void setTrustedModuleRequiredToBoot(
+     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+-    const uint64_t computerSystemIndex, const bool tpmRequired)
++    const uint64_t computerSystemIndex,
++    const std::string& trustedModuleRequired)
+ {
+     BMCWEB_LOG_DEBUG("Set TrustedModuleRequiredToBoot.");
++
++    // The schema property is an enum, and the GET above renders it as one.
++    // This used to be read as a JSON bool, so writing back what was read
++    // failed with PropertyValueTypeError.
++    bool tpmRequired = false;
++    if (trustedModuleRequired == "Required")
++    {
++        tpmRequired = true;
++    }
++    else if (trustedModuleRequired != "Disabled")
++    {
++        BMCWEB_LOG_DEBUG(
++            "Invalid property value for TrustedModuleRequiredToBoot: {}",
++            trustedModuleRequired);
++        messages::propertyValueNotInList(asyncResp->res, trustedModuleRequired,
++                                         "TrustedModuleRequiredToBoot");
++        return;
++    }
++
+     constexpr std::array<std::string_view, 1> interfaces = {
+         "xyz.openbmc_project.Control.TPM.Policy"};
+     dbus::utility::getSubTree(
+@@ -3257,13 +3279,16 @@ struct PatchParams
+     std::optional<std::string> bootEnable;
+     std::optional<std::string> bootAutomaticRetry;
+     std::optional<uint32_t> bootAutomaticRetryAttempts;
+-    std::optional<bool> bootTrustedModuleRequired;
++    std::optional<uint32_t> bootRemainingAutomaticRetryAttempts;
++    std::optional<std::string> bootTrustedModuleRequired;
+     std::optional<std::string> stopBootOnFault;
+     std::optional<bool> ipsEnable;
+     std::optional<uint8_t> ipsEnterUtil;
+     std::optional<uint64_t> ipsEnterTime;
+     std::optional<uint8_t> ipsExitUtil;
+     std::optional<uint64_t> ipsExitTime;
++
++    bool operator==(const PatchParams&) const = default;
+ };
+ 
+ /**
+@@ -3292,6 +3317,26 @@ inline void processComputerSystemPatch(
+         }
+     }
+ 
++    if (patchParams.bootRemainingAutomaticRetryAttempts)
++    {
++        // Read-only, and the GET renders it, so a client writing back the
++        // Boot object it read sends it. Report it without failing what can
++        // be written; a request with nothing else to write still fails.
++        PatchParams readOnly;
++        readOnly.bootRemainingAutomaticRetryAttempts =
++            patchParams.bootRemainingAutomaticRetryAttempts;
++        if (patchParams == readOnly)
++        {
++            messages::propertyNotWritable(
++                asyncResp->res, "Boot/RemainingAutomaticRetryAttempts");
++            return;
++        }
++        messages::addMessageToJsonRoot(
++            asyncResp->res.jsonValue,
++            messages::propertyNotWritable(
++                "Boot/RemainingAutomaticRetryAttempts"));
++    }
++
+     if (patchParams.assetTag)
+     {
+         setAssetTag(asyncResp, *patchParams.assetTag);
+@@ -3428,6 +3473,8 @@ inline void handleComputerSystemPatch(
+             "Boot/BootSourceOverrideEnabled", patchParams.bootEnable,         //
+             "Boot/BootSourceOverrideMode", patchParams.bootType,              //
+             "Boot/BootSourceOverrideTarget", patchParams.bootSource,          //
++            "Boot/RemainingAutomaticRetryAttempts",
++            patchParams.bootRemainingAutomaticRetryAttempts,                  //
+             "Boot/StopBootOnFault", patchParams.stopBootOnFault,              //
+             "Boot/TrustedModuleRequiredToBoot",
+             patchParams.bootTrustedModuleRequired,                            //
+--- a/test/redfish-core/include/utils/json_utils_test.cpp
++++ b/test/redfish-core/include/utils/json_utils_test.cpp
+@@ -255,6 +255,51 @@ TEST(ReadJson, ExtraElement)
+     EXPECT_EQ(str, "hello");
+ }
+ 
++// What a client sends when it writes back an object it read, as gofish's
++// ComputerSystem.SetBoot does with Boot.
++TEST(ReadJson, PropertyAnnotationsIgnored)
++{
++    crow::Response res;
++    nlohmann::json jsonRequest = {
++        {"Boot",
++         {{"BootSourceOverrideTarget", "Pxe"},
++          {"BootSourceOverrideTarget@Redfish.AllowableValues",
++           {"None", "Pxe"}}}},
++        {"Members@odata.count", 2}};
++
++    std::optional<std::string> target;
++    ASSERT_TRUE(
++        readJson(jsonRequest, res, "Boot/BootSourceOverrideTarget", target));
++    EXPECT_EQ(res.result(), boost::beast::http::status::ok);
++    EXPECT_THAT(res.jsonValue, IsEmpty());
++    EXPECT_EQ(target, "Pxe");
++}
++
++TEST(ReadJson, NamedPropertyAnnotationStillUnpacked)
++{
++    crow::Response res;
++    nlohmann::json jsonRequest = {{"Members@odata.count", 2}};
++
++    std::optional<int> count;
++    ASSERT_TRUE(readJson(jsonRequest, res, "Members@odata.count", count));
++    EXPECT_EQ(res.result(), boost::beast::http::status::ok);
++    EXPECT_EQ(count, 2);
++}
++
++// Object-level annotations change what a request means; they stay unknown
++// unless a handler asks for them.
++TEST(ReadJson, ObjectAnnotationStillUnknown)
++{
++    crow::Response res;
++    nlohmann::json jsonRequest = {
++        {"integer", 1}, {"@Redfish.SettingsApplyTime", nlohmann::json::object()}};
++
++    std::optional<int> integer;
++    EXPECT_FALSE(readJson(jsonRequest, res, "integer", integer));
++    EXPECT_EQ(res.result(), boost::beast::http::status::bad_request);
++    EXPECT_FALSE(res.jsonValue.empty());
++}
++
+ TEST(ReadJson, ValidMissingElementReturnsTrue)
+ {
+     crow::Response res;

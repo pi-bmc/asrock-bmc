@@ -44,6 +44,14 @@
 #          SupportedControllerProtocols / NVMeControllerProperties
 #          .ControllerType. p2a-inventory-monitor publishes the property.
 #
+#   0006 — Boot PATCH round trip. A client that writes back the Boot object
+#          it read (gofish's SetBoot, so bmclib/Rufio) was refused with 400:
+#          property annotations were PropertyUnknown, the
+#          TrustedModuleRequiredToBoot enum was parsed as a bool, and the
+#          read-only RemainingAutomaticRetryAttempts was PropertyUnknown.
+#          bmclib's fallback then dropped BootSourceOverrideMode and the
+#          host netbooted in whatever mode the BIOS last wrote (Legacy).
+#
 # SMBIOS still arrives over IPMI (blob handler; see smbios-mdr_%.bbappend).
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
@@ -53,6 +61,7 @@ SRC_URI += " \
     file://0003-enable-nbd-virtual-media-routes.patch \
     file://0004-redfish-systems-ethernet-interfaces-from-inventory.patch \
     file://0005-redfish-storage-controller-protocols-from-inventory.patch \
+    file://0006-redfish-accept-boot-object-written-back.patch \
     "
 
 # Disable bmcweb's zstd HTTP compression.
