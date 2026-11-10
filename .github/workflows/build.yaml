@@ -57,7 +57,10 @@ jobs:
   # instead of skipping it. A single job lets bitbake reuse sstate naturally
   # within the run; the GHCR cache carries that sstate forward between runs.
   build:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: when -latest moved to 26.04 the host jumped
+    # to Python 3.14 / a new GCC under a multi-hour Yocto build. Move this
+    # deliberately, and check that "Verify build tools" still passes.
+    runs-on: ubuntu-24.04
     # GitHub's hard limit for hosted runners. The build step's own timeout
     # below is shorter so the final cache save still gets to run.
     timeout-minutes: 360
@@ -75,11 +78,23 @@ jobs:
           docker-images: true
           swap-storage: true
 
+      # Use `lz4`, not the old `liblz4-tool` name. On Ubuntu 26.04 that is
+      # only a virtual package: the action turned it into a bogus package
+      # named "Reverse=Provides:", apt failed, and the step still passed. It
+      # then saved an empty cache, so every later run restored nothing and
+      # died at `kas: command not found`.
       - name: Cache and install build dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: build-essential chrpath cpio debianutils diffstat file gawk git iputils-ping libacl1 liblz4-tool locales python3 python3-git python3-jinja2 python3-pexpect python3-subunit socat texinfo unzip wget xz-utils zstd bison flex bc libssl-dev device-tree-compiler kas
+          packages: build-essential chrpath cpio debianutils diffstat file gawk git iputils-ping libacl1 lz4 locales python3 python3-git python3-jinja2 python3-pexpect python3-subunit socat texinfo unzip wget xz-utils zstd bison flex bc libssl-dev device-tree-compiler kas
           version: 1.0
+
+      # The action above can report success with nothing installed (see
+      # above). Fail here, with a clear error, not minutes later in the build.
+      - name: Verify build tools
+        run: |
+          kas --version
+          lz4 --version
 
       - name: Configure UTF-8 locale
         run: |

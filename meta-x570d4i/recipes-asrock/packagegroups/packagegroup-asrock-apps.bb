@@ -33,10 +33,13 @@ SUMMARY:${PN}-system = "ASRock System"
 #
 # Fan control: phosphor-pid-control (swampd) runs exactly one zone, "GPU",
 # from the entity-manager Pid / Stepwise / Pid.Zone records in x570d4i2t.json.
-# FAN3 only cools the passively-cooled Tesla T4, so its speed follows
-# "GPU Temp" (published by gpu-smbpbi-sensor from the card's SMBPBI post-box),
-# with failsafe 100% whenever the GPU is powered but unreadable. FAN1/FAN2
-# are in no zone and stay at their power-on 100%.
+# FAN3 follows the higher of two curves:
+#   - "GPU Temp" (gpu-smbpbi-sensor, the T4's SMBPBI post-box), and
+#   - "X570 Temp" (W83773G remote diode 1); from its 85 C warning threshold
+#     up, FAN3 runs at 100%.
+# FAN3 is also 100% whenever the GPU is powered but unreadable. FAN1/FAN2 are
+# in no zone and stay at their power-on 100%, so at that threshold every fan
+# is at full speed.
 RDEPENDS:${PN}-system = " \
         entity-manager \
         virtual-media \
